@@ -66,7 +66,9 @@
 <!-- Mobile overlay -->
 {#if open}
   <div class="fixed inset-0 flex z-40 lg:hidden">
-    <div class="fixed inset-0 bg-gray-600 bg-opacity-75" on:click={closeSidebar}></div>
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div class="fixed inset-0 bg-gray-600 bg-opacity-75" on:click={closeSidebar} role="button" tabindex="-1"></div>
   </div>
 {/if}
 

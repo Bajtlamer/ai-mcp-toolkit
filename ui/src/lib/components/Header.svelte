@@ -3,6 +3,7 @@
   import { Menu, Settings, Sun, Moon, Activity } from 'lucide-svelte';
   import { page } from '$app/stores';
   import { browser } from '$app/environment';
+  import { goto } from '$app/navigation';
   
   const dispatch = createEventDispatcher();
   
@@ -41,7 +42,8 @@
   // Check server status periodically
   async function checkServerStatus() {
     try {
-      const response = await fetch('/api/health');
+      // Point to the actual MCP server running on port 8000
+      const response = await fetch('http://localhost:8000/health');
       serverStatus = response.ok ? 'connected' : 'disconnected';
     } catch (error) {
       serverStatus = 'disconnected';

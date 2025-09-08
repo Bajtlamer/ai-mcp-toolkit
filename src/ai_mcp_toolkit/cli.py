@@ -1,6 +1,8 @@
 """Command Line Interface for AI MCP Toolkit."""
 
 import asyncio
+import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -64,24 +66,48 @@ def serve(
 @app.command()
 def ui(
     host: str = typer.Option("localhost", "--host", "-h", help="UI host"),
-    port: int = typer.Option(8501, "--port", "-p", help="UI port"),
+    port: int = typer.Option(5173, "--port", "-p", help="UI port"),
     config_file: Optional[Path] = typer.Option(None, "--config", "-c", help="Configuration file path")
 ):
-    """Launch the web UI."""
+    """Launch the web UI (Svelte development server)."""
     try:
         config = load_config(config_file)
-        config.ui_host = host
-        config.ui_port = port
         
-        console.print(f"[green]Launching web UI at http://{host}:{port}[/green]")
-        console.print("[yellow]Note: Make sure the MCP server is running![/yellow]")
+        # Find the UI directory
+        ui_dir = Path(__file__).parent.parent.parent / "ui"
         
-        # Import and run the UI
-        from .ui.app import run_ui
-        run_ui(config)
+        if not ui_dir.exists():
+            console.print("[red]UI directory not found. Make sure you're running from the project root.[/red]")
+            console.print(f"[yellow]Looking for: {ui_dir}[/yellow]")
+            raise typer.Exit(1)
         
-    except ImportError:
-        console.print("[red]Web UI dependencies not installed. Install with: pip install 'ai-mcp-toolkit[ui]'[/red]")
+        console.print(f"[green]Starting Svelte UI development server...[/green]")
+        console.print(f"[yellow]UI will be available at: http://{host}:{port}[/yellow]")
+        console.print("[yellow]Note: Make sure the MCP server is running on port 8000![/yellow]")
+        
+        # Check if node_modules exists
+        if not (ui_dir / "node_modules").exists():
+            console.print("[yellow]Installing UI dependencies...[/yellow]")
+            result = subprocess.run(["npm", "install"], cwd=ui_dir, capture_output=True, text=True)
+            if result.returncode != 0:
+                console.print(f"[red]Failed to install dependencies: {result.stderr}[/red]")
+                raise typer.Exit(1)
+        
+        # Set environment variables
+        env = os.environ.copy()
+        env['HOST'] = host
+        env['PORT'] = str(port)
+        
+        # Start the Svelte dev server
+        console.print("[blue]Starting development server... (Press Ctrl+C to stop)[/blue]")
+        subprocess.run(["npm", "run", "dev", "--", "--host", host, "--port", str(port)], 
+                      cwd=ui_dir, env=env)
+        
+    except KeyboardInterrupt:
+        console.print("\n[yellow]UI server stopped by user[/yellow]")
+    except FileNotFoundError:
+        console.print("[red]Node.js/npm not found. Please install Node.js to run the UI.[/red]")
+        console.print("[yellow]Visit: https://nodejs.org/[/yellow]")
         raise typer.Exit(1)
     except Exception as e:
         console.print(f"[red]Error starting UI: {e}[/red]")

@@ -79,29 +79,29 @@
         })
       };
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const response = await fetch('http://localhost:8000/tools/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: endpoint,
+          arguments: payload
+        })
+      });
+
+      const result = await response.json();
       
-      // Mock response based on settings
-      outputText = mockAnonymizeText(inputText, payload);
-      
-      // Mock analysis results
-      analysisResults = {
-        items_anonymized: 5,
-        anonymization_ratio: 0.15,
-        readability_preserved: preserveStructure,
-        anonymization_by_type: {
-          names: 2,
-          emails: 1,
-          phones: 1,
-          addresses: 1
-        }
-      };
-      
-      toast.success('Text anonymized successfully');
+      if (result.success) {
+        outputText = result.result;
+        toast.success('Text anonymized successfully');
+      } else {
+        toast.error(result.error || 'Failed to anonymize text');
+        console.error('Anonymization error:', result.error);
+      }
     } catch (error) {
       console.error('Anonymization error:', error);
-      toast.error('Failed to anonymize text. Please try again.');
+      toast.error('Failed to connect to server. Make sure the MCP server is running on port 8000.');
     } finally {
       loading = false;
     }
@@ -150,9 +150,44 @@
     toast.success('File downloaded');
   }
   
-  function detectSensitiveInfo() {
-    // This would call the detect_sensitive_info tool
-    toast.info('Sensitive information detection coming soon!');
+  async function detectSensitiveInfo() {
+    if (!inputText.trim()) {
+      toast.error('Please enter some text to analyze');
+      return;
+    }
+    
+    loading = true;
+    
+    try {
+      const response = await fetch('http://localhost:8000/tools/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'detect_sensitive_info',
+          arguments: {
+            text: inputText
+          }
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast.success('Sensitive information detected');
+        console.log('Detection results:', result.result);
+        // You could display the results in a modal or analysis panel
+      } else {
+        toast.error(result.error || 'Failed to detect sensitive information');
+        console.error('Detection error:', result.error);
+      }
+    } catch (error) {
+      console.error('Detection error:', error);
+      toast.error('Failed to connect to server. Make sure the MCP server is running on port 8000.');
+    } finally {
+      loading = false;
+    }
   }
 </script>
 
