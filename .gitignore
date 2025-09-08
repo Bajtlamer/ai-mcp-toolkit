@@ -1,0 +1,232 @@
+# AI MCP Toolkit - .gitignore
+# This file ensures ALL SOURCE CODE is versioned
+# Only ignores generated/temporary/runtime files
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+# Virtual environment lib folders
+venv/lib/
+venv/lib64/
+env/lib/
+env/lib64/
+.venv/lib/
+.venv/lib64/
+
+# Python installation folders (avoid ignoring project lib folders)
+lib/python*/
+lib64/python*/
+Library/
+Scripts/
+Include/
+share/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Configuration files with secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+config.yaml
+config.yml
+settings.yaml
+settings.yml
+
+# Generated data directories (keep source data/config)
+# data/  # Keep source data files - only ignore generated data
+user_data/
+runtime_data/
+generated_data/
+processing_cache/
+cache/
+*.db
+*.sqlite
+*.sqlite3
+
+# Model files and AI data (but keep model source code)
+# models/  # Keep model source code - only ignore actual model files
+*.model
+*.pkl
+*.pickle
+*.h5
+*.ckpt
+*.pth
+*.pt
+# Downloaded/cached model files
+downloaded_models/
+trained_models/
+model_cache/
+model_weights/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+.temp/
+
+# Node.js (for UI components)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+build/
+build/lib/
+build/lib.*/
+dist/
+out/
+
+# Documentation build
+docs/_build/
+docs/build/
+site/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# AI MCP Toolkit specific (runtime/generated files)
+.ai-mcp-toolkit/
+ollama_data/
+text_processing_cache/
+anonymized_outputs/
+analysis_results/
+user_configs/
+runtime_cache/
+processed_files/
+output_files/
+
+# Docker
+docker-compose.override.yml
+
+# Secrets and keys
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+.secrets/
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# ============================================
+# WHAT IS VERSIONED (these are NOT ignored):
+# ============================================
+# - All source code (.py files)
+# - Configuration templates (.yaml, .json)
+# - Documentation (.md files)
+# - UI source code (src/, ui/)
+# - Library source code (lib/ folders with .py files)
+# - Model definitions and schemas
+# - Example data and sample files
+# - Tests and test data
+# - Setup and deployment scripts
