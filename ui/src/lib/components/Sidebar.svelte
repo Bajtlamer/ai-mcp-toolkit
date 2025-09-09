@@ -51,15 +51,26 @@
     dispatch('close');
   }
   
+  $: currentPath = $page.url.pathname;
+  
   function isActive(href) {
     if (href === '/') {
-      return $page.url.pathname === '/';
+      return currentPath === '/';
     }
-    return $page.url.pathname.startsWith(href);
+    return currentPath.startsWith(href);
   }
   
   function isChildActive(children) {
     return children?.some(child => isActive(child.href));
+  }
+  
+  // Close sidebar on navigation (for mobile)
+  function handleNavigation() {
+    if (open) {
+      setTimeout(() => {
+        dispatch('close');
+      }, 100);
+    }
   }
 </script>
 
@@ -105,8 +116,9 @@
         <div>
           <a
             href={item.href}
+            on:click={handleNavigation}
             class={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${
-              isActive(item.href) || isChildActive(item.children)
+              (currentPath === item.href) || (currentPath !== '/' && currentPath.startsWith(item.href)) || isChildActive(item.children)
                 ? 'bg-primary-50 text-primary-700 dark:bg-primary-900 dark:text-primary-200'
                 : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
             }`}
@@ -115,7 +127,7 @@
               this={item.icon} 
               size={18} 
               class={`mr-3 flex-shrink-0 ${
-                isActive(item.href) || isChildActive(item.children)
+                (currentPath === item.href) || (currentPath !== '/' && currentPath.startsWith(item.href)) || isChildActive(item.children)
                   ? 'text-primary-500'
                   : 'text-gray-400 group-hover:text-gray-500 dark:group-hover:text-gray-300'
               }`} 
@@ -128,8 +140,9 @@
               {#each item.children as child}
                 <a
                   href={child.href}
+                  on:click={handleNavigation}
                   class={`group flex items-center px-2 py-1.5 text-sm rounded-md transition-colors ${
-                    isActive(child.href)
+                    currentPath === child.href
                       ? 'bg-primary-100 text-primary-800 dark:bg-primary-800 dark:text-primary-200 font-medium'
                       : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-300'
                   }`}
@@ -138,7 +151,7 @@
                     this={child.icon} 
                     size={16} 
                     class={`mr-2 flex-shrink-0 ${
-                      isActive(child.href)
+                      currentPath === child.href
                         ? 'text-primary-600 dark:text-primary-400'
                         : 'text-gray-400 group-hover:text-gray-500 dark:group-hover:text-gray-400'
                     }`} 
@@ -157,6 +170,7 @@
       {#each bottomNavigation as item}
         <a
           href={item.href}
+          on:click={handleNavigation}
           class={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${
             isActive(item.href)
               ? 'bg-primary-50 text-primary-700 dark:bg-primary-900 dark:text-primary-200'
