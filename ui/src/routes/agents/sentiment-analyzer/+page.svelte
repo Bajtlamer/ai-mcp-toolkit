@@ -193,59 +193,49 @@
         <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Sentiment Analysis</h3>
         
         <div class="flex items-center space-x-4 mb-4">
-          {#if sentimentResult.sentiment}
-            <div class="text-4xl">{getSentimentIcon(sentimentResult.sentiment)}</div>
+          {#if sentimentResult.overall_sentiment}
+            <div class="text-4xl">{getSentimentIcon(sentimentResult.overall_sentiment)}</div>
             <div>
-              <div class="text-2xl font-bold {getSentimentColor(sentimentResult.sentiment)}">
-                {sentimentResult.sentiment}
+              <div class="text-2xl font-bold {getSentimentColor(sentimentResult.overall_sentiment)}">
+                {sentimentResult.overall_sentiment.charAt(0).toUpperCase() + sentimentResult.overall_sentiment.slice(1)}
               </div>
-              {#if sentimentResult.score !== undefined}
-                <div class="text-lg {getScoreColor(sentimentResult.score)}">
-                  Score: {sentimentResult.score.toFixed(3)}
+              {#if sentimentResult.confidence !== undefined}
+                <div class="text-lg text-gray-600 dark:text-gray-400">
+                  {sentimentResult.intensity ? sentimentResult.intensity.charAt(0).toUpperCase() + sentimentResult.intensity.slice(1) + ' intensity' : ''}
                 </div>
               {/if}
             </div>
           {/if}
         </div>
 
-        <!-- Score Bar -->
-        {#if sentimentResult.score !== undefined}
+        <!-- Key Indicators -->
+        {#if sentimentResult.key_indicators && sentimentResult.key_indicators.length > 0}
           <div class="mb-4">
-            <div class="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-1">
-              <span>Very Negative</span>
-              <span>Neutral</span>
-              <span>Very Positive</span>
-            </div>
-            <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-              <div 
-                class="h-3 rounded-full transition-all duration-300 {
-                  sentimentResult.score >= 0 ? 'bg-green-500' : 'bg-red-500'
-                }"
-                style="width: {Math.abs(sentimentResult.score) * 50 + 50}%; margin-left: {sentimentResult.score < 0 ? (50 + sentimentResult.score * 50) + '%' : '50%'}"
-              ></div>
-            </div>
-            <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
-              <span>-1.0</span>
-              <span>0.0</span>
-              <span>+1.0</span>
+            <h5 class="text-sm font-medium text-gray-900 dark:text-white mb-2">Key Sentiment Indicators</h5>
+            <div class="flex flex-wrap gap-2">
+              {#each sentimentResult.key_indicators as indicator}
+                <span class="px-2 py-1 bg-pink-100 dark:bg-pink-900/30 text-pink-800 dark:text-pink-200 text-xs rounded-full">
+                  {indicator}
+                </span>
+              {/each}
             </div>
           </div>
         {/if}
       </div>
 
-      <!-- Detailed Breakdown -->
-      {#if sentimentResult.breakdown}
+      <!-- Emotions Detected -->
+      {#if sentimentResult.emotions_detected && sentimentResult.emotions_detected.length > 0}
         <div class="p-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
-          <h4 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Emotional Breakdown</h4>
+          <h4 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Emotions Detected</h4>
           <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {#each Object.entries(sentimentResult.breakdown) as [emotion, score]}
+            {#each sentimentResult.emotions_detected as emotion}
               <div class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                <div class="text-sm font-medium text-gray-900 dark:text-white capitalize">{emotion}</div>
-                <div class="text-lg font-bold {getScoreColor(score)}">{(score * 100).toFixed(1)}%</div>
+                <div class="text-sm font-medium text-gray-900 dark:text-white capitalize">{emotion.emotion}</div>
+                <div class="text-lg font-bold text-pink-600 dark:text-pink-400">{emotion.intensity}%</div>
                 <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 mt-1">
                   <div 
                     class="h-2 rounded-full bg-pink-500"
-                    style="width: {Math.abs(score) * 100}%"
+                    style="width: {emotion.intensity}%"
                   ></div>
                 </div>
               </div>
@@ -259,13 +249,24 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           {#if sentimentResult.confidence}
             <div class="p-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
-              <h4 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Confidence</h4>
+              <h4 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Analysis Confidence</h4>
               <div class="text-3xl font-bold text-pink-600 dark:text-pink-400">
                 {(sentimentResult.confidence * 100).toFixed(1)}%
               </div>
               <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Analysis confidence level
+                {#if sentimentResult.overall_sentiment === 'negative'}
+                  Certainty that sentiment is negative
+                {:else if sentimentResult.overall_sentiment === 'positive'}
+                  Certainty that sentiment is positive
+                {:else}
+                  Certainty of sentiment classification
+                {/if}
               </div>
+              {#if sentimentResult.overall_sentiment === 'negative' && sentimentResult.confidence > 0.8}
+                <div class="text-xs text-red-600 dark:text-red-400 mt-2 font-medium">
+                  High confidence in negative sentiment
+                </div>
+              {/if}
             </div>
           {/if}
 
