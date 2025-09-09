@@ -130,7 +130,7 @@
                   href={child.href}
                   class={`group flex items-center px-2 py-1.5 text-sm rounded-md transition-colors ${
                     isActive(child.href)
-                      ? 'bg-primary-100 text-primary-800 dark:bg-primary-800 dark:text-primary-200'
+                      ? 'bg-primary-100 text-primary-800 dark:bg-primary-800 dark:text-primary-200 font-medium'
                       : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-300'
                   }`}
                 >
