@@ -77,14 +77,10 @@
       const isDark = uiConfig.theme === 'dark' || 
                      (uiConfig.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
       
-      console.log('Settings applyTheme:', { theme: uiConfig.theme, isDark, systemDark: window.matchMedia('(prefers-color-scheme: dark)').matches });
-      
       if (isDark) {
         document.documentElement.classList.add('dark');
-        console.log('Settings: Dark mode applied');
       } else {
         document.documentElement.classList.remove('dark');
-        console.log('Settings: Light mode applied');
       }
       
       // Update localStorage for header component

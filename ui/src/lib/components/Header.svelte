@@ -42,10 +42,8 @@
     if (browser) {
       if (darkMode) {
         document.documentElement.classList.add('dark');
-        console.log('Dark mode enabled - added dark class to html');
       } else {
         document.documentElement.classList.remove('dark');
-        console.log('Light mode enabled - removed dark class from html');
       }
     }
   }
