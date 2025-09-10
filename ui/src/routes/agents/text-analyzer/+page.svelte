@@ -36,19 +36,19 @@
     
     try {
       // Build arguments based on input mode
-      const arguments = {};
+      const args = {};
       if (inputMode === 'text') {
-        arguments.text = inputText;
+        args.text = inputText;
       } else {
-        arguments.url = inputUrl;
+        args.url = inputUrl;
       }
       
       // Run all analyses in parallel
       const [basicResult, wordFreqResult, readabilityResult, complexityResult] = await Promise.all([
-        executeAnalysis('analyze_text_basic', arguments),
-        executeAnalysis('word_frequency_analysis', { ...arguments, top_n: 20 }),
-        executeAnalysis('analyze_readability', arguments),
-        executeAnalysis('text_complexity_analysis', arguments)
+        executeAnalysis('analyze_text_basic', args),
+        executeAnalysis('word_frequency_analysis', { ...args, top_n: 20 }),
+        executeAnalysis('analyze_readability', args),
+        executeAnalysis('text_complexity_analysis', args)
       ]);
       
       basicStats = basicResult;

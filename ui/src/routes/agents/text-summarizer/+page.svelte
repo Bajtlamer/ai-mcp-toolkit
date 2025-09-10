@@ -41,15 +41,15 @@
     
     try {
       // Build arguments based on input mode
-      const arguments = {
+      const args = {
         length: summaryLength,
         compression_ratio: compressionLevel
       };
       
       if (inputMode === 'text') {
-        arguments.text = inputText;
+        args.text = inputText;
       } else {
-        arguments.url = inputUrl;
+        args.url = inputUrl;
       }
       
       const response = await fetch('http://localhost:8000/tools/execute', {
@@ -59,7 +59,7 @@
         },
         body: JSON.stringify({
           name: 'summarize_text',
-          arguments: arguments
+          arguments: args
         })
       });
 
