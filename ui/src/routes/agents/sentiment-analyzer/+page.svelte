@@ -1,10 +1,16 @@
 <script>
-  import { Heart, Play, Download } from 'lucide-svelte';
+  import { Heart, Play, Download, Wand2, ArrowRight, RotateCcw } from 'lucide-svelte';
 
   let inputText = '';
   let sentimentResult = null;
   let isProcessing = false;
   let error = null;
+  
+  // Sentiment transformation variables
+  let transformedText = '';
+  let targetSentiment = 'positive';
+  let isTransforming = false;
+  let transformError = null;
 
   // Example texts for demonstration
   const examples = [
@@ -14,6 +20,16 @@
     { text: "What a fantastic day! The weather is beautiful and I'm feeling great.", sentiment: "Positive" },
     { text: "I'm frustrated and angry about the poor customer service I received.", sentiment: "Very Negative" },
     { text: "The movie was decent. Some parts were good, others not so much.", sentiment: "Mixed" }
+  ];
+  
+  // Target sentiment options for transformation
+  const sentimentOptions = [
+    { value: 'positive', label: 'Positive', icon: '😊', description: 'Upbeat and optimistic tone' },
+    { value: 'negative', label: 'Negative', icon: '😞', description: 'Pessimistic or critical tone' },
+    { value: 'neutral', label: 'Neutral', icon: '😐', description: 'Balanced and objective tone' },
+    { value: 'professional', label: 'Professional', icon: '💼', description: 'Formal business tone' },
+    { value: 'friendly', label: 'Friendly', icon: '😄', description: 'Warm and approachable tone' },
+    { value: 'enthusiastic', label: 'Enthusiastic', icon: '🎉', description: 'Energetic and excited tone' }
   ];
 
   async function analyzeSentiment() {
@@ -49,6 +65,58 @@
       console.error('Error:', err);
     } finally {
       isProcessing = false;
+    }
+  }
+  
+  async function transformSentiment() {
+    if (!inputText.trim()) return;
+    
+    isTransforming = true;
+    transformError = null;
+    transformedText = '';
+    
+    try {
+      const response = await fetch('http://localhost:8000/tools/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'transform_sentiment',
+          arguments: {
+            text: inputText,
+            target_sentiment: targetSentiment,
+            preserve_meaning: true
+          }
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        transformedText = result.result;
+      } else {
+        transformError = result.error || 'Failed to transform sentiment';
+      }
+    } catch (err) {
+      transformError = 'Failed to connect to server. Make sure the MCP server is running on port 8000.';
+      console.error('Transform error:', err);
+    } finally {
+      isTransforming = false;
+    }
+  }
+  
+  function copyTransformedText() {
+    if (transformedText) {
+      navigator.clipboard.writeText(transformedText);
+      // You might want to add a toast notification here
+    }
+  }
+  
+  function useTransformedAsInput() {
+    if (transformedText) {
+      inputText = transformedText;
+      transformedText = '';
     }
   }
 
@@ -110,8 +178,8 @@
         <Heart size={24} class="text-white" />
       </div>
       <div>
-        <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Sentiment Analyzer</h1>
-        <p class="text-gray-600 dark:text-gray-400">Analyze emotional tone and sentiment of text</p>
+        <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Sentiment Analyzer & Transformer</h1>
+        <p class="text-gray-600 dark:text-gray-400">Analyze emotional tone and transform text to match desired sentiment</p>
       </div>
     </div>
   </div>
@@ -177,6 +245,111 @@
         {/if}
       </div>
     </div>
+  </div>
+  
+  <!-- Sentiment Transformation Section -->
+  <div class="mb-6 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl p-6 border border-purple-100 dark:border-purple-800">
+    <div class="flex items-center space-x-3 mb-4">
+      <div class="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+        <Wand2 size={20} class="text-white" />
+      </div>
+      <div>
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Sentiment Transformation</h3>
+        <p class="text-sm text-gray-600 dark:text-gray-400">Rewrite your text to match a desired sentiment tone</p>
+      </div>
+    </div>
+    
+    <!-- Target Sentiment Selection -->
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+        Target Sentiment
+      </label>
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {#each sentimentOptions as option}
+          <label class="relative cursor-pointer">
+            <input
+              type="radio"
+              bind:group={targetSentiment}
+              value={option.value}
+              class="sr-only peer"
+            />
+            <div class="p-3 border-2 border-gray-200 dark:border-gray-700 rounded-lg peer-checked:border-purple-500 peer-checked:bg-purple-50 dark:peer-checked:bg-purple-900/30 hover:border-gray-300 dark:hover:border-gray-600 transition-all">
+              <div class="flex items-center space-x-2 mb-1">
+                <span class="text-lg">{option.icon}</span>
+                <span class="font-medium text-gray-900 dark:text-white">{option.label}</span>
+              </div>
+              <p class="text-xs text-gray-500 dark:text-gray-400">{option.description}</p>
+            </div>
+          </label>
+        {/each}
+      </div>
+    </div>
+    
+    <!-- Transform Actions -->
+    <div class="flex flex-col sm:flex-row gap-3">
+      <button
+        on:click={transformSentiment}
+        disabled={!inputText.trim() || isTransforming}
+        class="flex items-center justify-center px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:from-gray-400 disabled:to-gray-400 text-white font-medium rounded-lg transition-all"
+      >
+        {#if isTransforming}
+          <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+          Transforming...
+        {:else}
+          <Wand2 size={16} class="mr-2" />
+          Transform to {sentimentOptions.find(opt => opt.value === targetSentiment)?.label}
+        {/if}
+      </button>
+      
+      {#if transformedText}
+        <button
+          on:click={copyTransformedText}
+          class="flex items-center px-3 py-2 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg transition-colors"
+        >
+          <Download size={14} class="mr-2" />
+          Copy Result
+        </button>
+        
+        <button
+          on:click={useTransformedAsInput}
+          class="flex items-center px-3 py-2 bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-800/30 text-green-700 dark:text-green-300 border border-green-300 dark:border-green-700 rounded-lg transition-colors"
+        >
+          <RotateCcw size={14} class="mr-2" />
+          Use as Input
+        </button>
+      {/if}
+    </div>
+    
+    <!-- Transformed Text Result -->
+    {#if transformError}
+      <div class="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+        <div class="text-red-600 dark:text-red-400 text-sm">
+          <strong>Transform Error:</strong> {transformError}
+        </div>
+      </div>
+    {:else if transformedText}
+      <div class="mt-4">
+        <div class="flex items-center justify-between mb-2">
+          <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Transformed Text ({sentimentOptions.find(opt => opt.value === targetSentiment)?.icon} {sentimentOptions.find(opt => opt.value === targetSentiment)?.label})
+          </label>
+          <span class="text-xs text-gray-500 dark:text-gray-400">
+            {transformedText.length} characters
+          </span>
+        </div>
+        <div class="relative">
+          <div class="p-4 bg-white dark:bg-gray-800 border border-purple-200 dark:border-purple-700 rounded-lg font-medium text-gray-900 dark:text-white">
+            {transformedText}
+          </div>
+          <div class="absolute top-2 right-2">
+            <div class="flex items-center space-x-1 text-xs text-purple-600 dark:text-purple-400">
+              <ArrowRight size={12} />
+              <span>{sentimentOptions.find(opt => opt.value === targetSentiment)?.icon}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    {/if}
   </div>
 
   <!-- Results -->
@@ -296,7 +469,7 @@
   <!-- Features -->
   <div class="mt-12">
     <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-6">Features</h2>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
       <div class="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
         <h3 class="font-medium text-gray-900 dark:text-white mb-2">Emotion Detection</h3>
         <p class="text-sm text-gray-600 dark:text-gray-400">
@@ -313,6 +486,15 @@
         <h3 class="font-medium text-gray-900 dark:text-white mb-2">Detailed Analysis</h3>
         <p class="text-sm text-gray-600 dark:text-gray-400">
           Breaks down sentiment into emotional components.
+        </p>
+      </div>
+      <div class="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+        <div class="flex items-center space-x-2 mb-2">
+          <Wand2 size={16} class="text-purple-500" />
+          <h3 class="font-medium text-gray-900 dark:text-white">Sentiment Transformation</h3>
+        </div>
+        <p class="text-sm text-gray-600 dark:text-gray-400">
+          Rewrite text to match your desired emotional tone.
         </p>
       </div>
     </div>

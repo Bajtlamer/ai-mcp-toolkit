@@ -45,6 +45,31 @@ class SentimentAnalyzerAgent(BaseAgent):
                 }
             ),
             Tool(
+                name="transform_sentiment",
+                description="Transform text to match a desired sentiment while preserving meaning",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "text": {
+                            "type": "string",
+                            "description": "The text to transform"
+                        },
+                        "target_sentiment": {
+                            "type": "string",
+                            "description": "The desired sentiment for the transformed text",
+                            "enum": ["positive", "negative", "neutral", "professional", "friendly", "enthusiastic"],
+                            "default": "positive"
+                        },
+                        "preserve_meaning": {
+                            "type": "boolean",
+                            "description": "Whether to preserve the core meaning of the text",
+                            "default": True
+                        }
+                    },
+                    "required": ["text", "target_sentiment"]
+                }
+            ),
+            Tool(
                 name="sentiment_comparison",
                 description="Compare sentiment between multiple texts",
                 inputSchema={
@@ -74,6 +99,8 @@ class SentimentAnalyzerAgent(BaseAgent):
         try:
             if tool_name == "analyze_sentiment":
                 result = await self._analyze_sentiment(arguments)
+            elif tool_name == "transform_sentiment":
+                result = await self._transform_sentiment(arguments)
             elif tool_name == "sentiment_comparison":
                 result = await self._sentiment_comparison(arguments)
             else:
@@ -145,6 +172,62 @@ Format your response as structured data that can be parsed."""
                 "texts_analyzed": len(texts),
                 "labels": labels[:len(texts)]
             }
+
+    async def _transform_sentiment(self, arguments: Dict[str, Any]) -> str:
+        """Transform text to match a desired sentiment while preserving meaning."""
+        text = self.validate_text_input(arguments["text"])
+        target_sentiment = arguments.get("target_sentiment", "positive")
+        preserve_meaning = arguments.get("preserve_meaning", True)
+        
+        # Build sentiment transformation prompt
+        system_prompt = self._build_transform_system_prompt(target_sentiment, preserve_meaning)
+        
+        messages = [
+            ChatMessage(role="system", content=system_prompt),
+            ChatMessage(role="user", content=f"Transform this text to have a {target_sentiment} sentiment:\n\n{text}")
+        ]
+        
+        async with self.ollama_client as client:
+            await client.ensure_model_available()
+            response = await client.chat_completion(messages=messages)
+            
+            # Return the transformed text directly
+            return response.response.strip()
+
+    def _build_transform_system_prompt(self, target_sentiment: str, preserve_meaning: bool) -> str:
+        """Build system prompt for sentiment transformation."""
+        base_prompt = "You are an expert text rewriter specializing in sentiment transformation."
+        
+        # Define sentiment characteristics
+        sentiment_guides = {
+            "positive": "optimistic, upbeat, cheerful, encouraging, and hopeful. Use positive language, focus on benefits and opportunities.",
+            "negative": "critical, pessimistic, disappointed, or concerned. Use cautious language, focus on problems and risks.",
+            "neutral": "objective, balanced, factual, and impartial. Use neutral language, avoid emotional words.",
+            "professional": "formal, business-appropriate, respectful, and courteous. Use professional vocabulary and tone.",
+            "friendly": "warm, approachable, conversational, and welcoming. Use friendly language and inclusive tone.",
+            "enthusiastic": "excited, energetic, passionate, and animated. Use dynamic language and show excitement."
+        }
+        
+        target_description = sentiment_guides.get(target_sentiment, "the requested sentiment")
+        
+        preservation_instruction = ""
+        if preserve_meaning:
+            preservation_instruction = "IMPORTANT: Preserve the core meaning and factual content of the original text. Only change the emotional tone and style, not the fundamental message or information."
+        else:
+            preservation_instruction = "You may adjust the meaning slightly to better match the target sentiment, but keep the general topic and context."
+        
+        guidelines = f"""Your task is to rewrite text to sound {target_description}
+
+{preservation_instruction}
+
+Guidelines:
+1. Maintain the same basic structure and format
+2. Keep important details and facts intact
+3. Adjust word choice, tone, and phrasing to match the target sentiment
+4. Ensure the result sounds natural and authentic
+5. Return ONLY the transformed text, no additional commentary"""
+        
+        return f"{base_prompt}\n\n{guidelines}"
 
     def _build_sentiment_system_prompt(self, detail_level: str, include_emotions: bool) -> str:
         """Build system prompt for sentiment analysis."""
