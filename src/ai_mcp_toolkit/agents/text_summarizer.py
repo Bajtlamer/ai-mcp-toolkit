@@ -1,11 +1,12 @@
 """Text summarizer agent using AI for generating concise summaries."""
 
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from mcp.types import Tool
 
 from .base_agent import BaseAgent
 from ..models.ollama_client import OllamaClient, ChatMessage
+from ..utils.url_fetcher import fetch_url_content
 
 
 class TextSummarizerAgent(BaseAgent):
@@ -21,13 +22,17 @@ class TextSummarizerAgent(BaseAgent):
         return [
             Tool(
                 name="summarize_text",
-                description="Generate a concise summary of the provided text",
+                description="Generate a concise summary of text from direct input or a URL",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "text": {
                             "type": "string",
-                            "description": "The text to summarize"
+                            "description": "The text to summarize (either this or 'url' must be provided)"
+                        },
+                        "url": {
+                            "type": "string",
+                            "description": "URL to fetch content from and summarize (either this or 'text' must be provided)"
                         },
                         "summary_type": {
                             "type": "string",
@@ -53,19 +58,22 @@ class TextSummarizerAgent(BaseAgent):
                             "enum": ["main_points", "conclusions", "actions", "facts", "opinions"],
                             "default": "main_points"
                         }
-                    },
-                    "required": ["text"]
+                    }
                 }
             ),
             Tool(
                 name="extract_key_points",
-                description="Extract key points and main ideas from text",
+                description="Extract key points and main ideas from text or URL content",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "text": {
                             "type": "string",
-                            "description": "The text to extract key points from"
+                            "description": "The text to extract key points from (either this or 'url' must be provided)"
+                        },
+                        "url": {
+                            "type": "string",
+                            "description": "URL to fetch content from and extract key points (either this or 'text' must be provided)"
                         },
                         "max_points": {
                             "type": "integer",
@@ -77,19 +85,22 @@ class TextSummarizerAgent(BaseAgent):
                             "description": "Whether to include context for each key point",
                             "default": True
                         }
-                    },
-                    "required": ["text"]
+                    }
                 }
             ),
             Tool(
                 name="generate_headlines",
-                description="Generate catchy headlines or titles for the text",
+                description="Generate catchy headlines or titles for text or URL content",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "text": {
                             "type": "string",
-                            "description": "The text to generate headlines for"
+                            "description": "The text to generate headlines for (either this or 'url' must be provided)"
+                        },
+                        "url": {
+                            "type": "string",
+                            "description": "URL to fetch content from and generate headlines (either this or 'text' must be provided)"
                         },
                         "count": {
                             "type": "integer",
@@ -102,8 +113,7 @@ class TextSummarizerAgent(BaseAgent):
                             "enum": ["neutral", "catchy", "professional", "academic"],
                             "default": "neutral"
                         }
-                    },
-                    "required": ["text"]
+                    }
                 }
             )
         ]
@@ -130,9 +140,39 @@ class TextSummarizerAgent(BaseAgent):
             self.logger.error(f"Error executing {tool_name}: {e}")
             raise
 
+    async def _get_text_content(self, arguments: Dict[str, Any]) -> str:
+        """Get text content from either direct input or URL."""
+        text = arguments.get("text")
+        url = arguments.get("url")
+        
+        if not text and not url:
+            raise ValueError("Either 'text' or 'url' must be provided")
+        
+        if text and url:
+            raise ValueError("Only one of 'text' or 'url' should be provided, not both")
+        
+        if url:
+            try:
+                self.logger.info(f"Fetching content from URL: {url}")
+                content_data = await fetch_url_content(url)
+                text = content_data['text']
+                self.logger.info(f"Successfully fetched {len(text)} characters from {url}")
+                
+                # Add URL info to the text for context
+                if content_data.get('title'):
+                    text = f"Title: {content_data['title']}\n\n{text}"
+                
+            except Exception as e:
+                self.logger.error(f"Failed to fetch content from URL {url}: {e}")
+                raise ValueError(f"Failed to fetch content from URL: {str(e)}")
+        
+        return self.validate_text_input(text)
+
     async def _summarize_text(self, arguments: Dict[str, Any]) -> str:
         """Generate a summary of the text."""
-        text = self.validate_text_input(arguments["text"])
+        # Get text from either direct input or URL
+        text = await self._get_text_content(arguments)
+        
         summary_type = arguments.get("summary_type", "abstractive")
         length = arguments.get("length", "short")
         focus = arguments.get("focus", "main_points")
@@ -185,7 +225,7 @@ class TextSummarizerAgent(BaseAgent):
 
     async def _extract_key_points(self, arguments: Dict[str, Any]) -> str:
         """Extract key points from text."""
-        text = self.validate_text_input(arguments["text"])
+        text = await self._get_text_content(arguments)
         max_points = arguments.get("max_points", 5)
         include_context = arguments.get("include_context", True)
         
@@ -207,7 +247,7 @@ Present the key points as a numbered list {context_instruction}. Focus on the mo
 
     async def _generate_headlines(self, arguments: Dict[str, Any]) -> str:
         """Generate headlines for the text."""
-        text = self.validate_text_input(arguments["text"])
+        text = await self._get_text_content(arguments)
         count = arguments.get("count", 3)
         style = arguments.get("style", "neutral")
         

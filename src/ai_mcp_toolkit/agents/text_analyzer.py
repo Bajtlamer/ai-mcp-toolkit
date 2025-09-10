@@ -7,6 +7,7 @@ from mcp.types import Tool
 import textstat
 
 from .base_agent import BaseAgent
+from ..utils.url_fetcher import fetch_url_content
 
 
 class TextAnalyzerAgent(BaseAgent):
@@ -17,32 +18,39 @@ class TextAnalyzerAgent(BaseAgent):
         return [
             Tool(
                 name="analyze_text_basic",
-                description="Analyze basic text statistics (characters, words, sentences, paragraphs)",
+                description="Analyze basic text statistics from text input or URL content",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "text": {
                             "type": "string",
-                            "description": "The text to analyze"
+                            "description": "The text to analyze (either this or 'url' must be provided)"
+                        },
+                        "url": {
+                            "type": "string",
+                            "description": "URL to fetch content from and analyze (either this or 'text' must be provided)"
                         },
                         "include_whitespace": {
                             "type": "boolean",
                             "description": "Whether to include whitespace in character count",
                             "default": True
                         }
-                    },
-                    "required": ["text"]
+                    }
                 }
             ),
             Tool(
                 name="analyze_readability",
-                description="Analyze text readability using various metrics",
+                description="Analyze text readability from text input or URL content",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "text": {
                             "type": "string",
-                            "description": "The text to analyze for readability"
+                            "description": "The text to analyze for readability (either this or 'url' must be provided)"
+                        },
+                        "url": {
+                            "type": "string",
+                            "description": "URL to fetch content from and analyze readability (either this or 'text' must be provided)"
                         },
                         "metrics": {
                             "type": "array",
@@ -50,19 +58,22 @@ class TextAnalyzerAgent(BaseAgent):
                             "description": "Specific readability metrics to calculate",
                             "default": ["flesch_kincaid", "flesch_reading_ease", "coleman_liau", "automated_readability"]
                         }
-                    },
-                    "required": ["text"]
+                    }
                 }
             ),
             Tool(
                 name="word_frequency_analysis",
-                description="Analyze word frequency and distribution in text",
+                description="Analyze word frequency and distribution from text input or URL content",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "text": {
                             "type": "string",
-                            "description": "The text to analyze for word frequency"
+                            "description": "The text to analyze for word frequency (either this or 'url' must be provided)"
+                        },
+                        "url": {
+                            "type": "string",
+                            "description": "URL to fetch content from and analyze word frequency (either this or 'text' must be provided)"
                         },
                         "top_n": {
                             "type": "integer",
@@ -79,22 +90,24 @@ class TextAnalyzerAgent(BaseAgent):
                             "description": "Whether to exclude common stop words",
                             "default": True
                         }
-                    },
-                    "required": ["text"]
+                    }
                 }
             ),
             Tool(
                 name="text_complexity_analysis",
-                description="Analyze text complexity including vocabulary richness and sentence structure",
+                description="Analyze text complexity from text input or URL content",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "text": {
                             "type": "string",
-                            "description": "The text to analyze for complexity"
+                            "description": "The text to analyze for complexity (either this or 'url' must be provided)"
+                        },
+                        "url": {
+                            "type": "string",
+                            "description": "URL to fetch content from and analyze complexity (either this or 'text' must be provided)"
                         }
-                    },
-                    "required": ["text"]
+                    }
                 }
             )
         ]
@@ -123,9 +136,37 @@ class TextAnalyzerAgent(BaseAgent):
             self.logger.error(f"Error executing {tool_name}: {e}")
             raise
 
+    async def _get_text_content(self, arguments: Dict[str, Any]) -> str:
+        """Get text content from either direct input or URL."""
+        text = arguments.get("text")
+        url = arguments.get("url")
+        
+        if not text and not url:
+            raise ValueError("Either 'text' or 'url' must be provided")
+        
+        if text and url:
+            raise ValueError("Only one of 'text' or 'url' should be provided, not both")
+        
+        if url:
+            try:
+                self.logger.info(f"Fetching content from URL: {url}")
+                content_data = await fetch_url_content(url)
+                text = content_data['text']
+                self.logger.info(f"Successfully fetched {len(text)} characters from {url}")
+                
+                # Add URL info to the text for context
+                if content_data.get('title'):
+                    text = f"Title: {content_data['title']}\n\n{text}"
+                
+            except Exception as e:
+                self.logger.error(f"Failed to fetch content from URL {url}: {e}")
+                raise ValueError(f"Failed to fetch content from URL: {str(e)}")
+        
+        return self.validate_text_input(text)
+
     async def _analyze_text_basic(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze basic text statistics."""
-        text = self.validate_text_input(arguments["text"])
+        text = await self._get_text_content(arguments)
         include_whitespace = arguments.get("include_whitespace", True)
         
         # Character counts
@@ -177,7 +218,7 @@ class TextAnalyzerAgent(BaseAgent):
 
     async def _analyze_readability(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze text readability using various metrics."""
-        text = self.validate_text_input(arguments["text"])
+        text = await self._get_text_content(arguments)
         metrics = arguments.get("metrics", ["flesch_kincaid", "flesch_reading_ease", "coleman_liau", "automated_readability"])
         
         results = {}
@@ -227,7 +268,7 @@ class TextAnalyzerAgent(BaseAgent):
 
     async def _word_frequency_analysis(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze word frequency and distribution."""
-        text = self.validate_text_input(arguments["text"])
+        text = await self._get_text_content(arguments)
         top_n = arguments.get("top_n", 10)
         min_length = arguments.get("min_length", 3)
         exclude_common = arguments.get("exclude_common", True)
@@ -271,7 +312,7 @@ class TextAnalyzerAgent(BaseAgent):
 
     async def _text_complexity_analysis(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze text complexity including vocabulary richness and sentence structure."""
-        text = self.validate_text_input(arguments["text"])
+        text = await self._get_text_content(arguments)
         
         words = text.split()
         sentences = re.split(r'[.!?]+', text)
