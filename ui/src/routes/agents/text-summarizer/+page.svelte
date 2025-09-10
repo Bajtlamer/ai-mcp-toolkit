@@ -2,11 +2,13 @@
   import { Zap, Play, Copy, Download } from 'lucide-svelte';
 
   let inputText = '';
+  let inputUrl = '';
   let outputText = '';
   let isProcessing = false;
   let error = null;
   let compressionLevel = 'high';
   let summaryLength = 'short';
+  let inputMode = 'text'; // 'text' or 'url'
   
   const compressionOptions = [
     { value: 'extreme', label: 'Extreme', description: 'Ultra-concise (< 5% of original)' },
@@ -30,12 +32,26 @@
   ];
 
   async function summarizeText() {
-    if (!inputText.trim()) return;
+    // Validate input based on mode
+    if (inputMode === 'text' && !inputText.trim()) return;
+    if (inputMode === 'url' && !inputUrl.trim()) return;
     
     isProcessing = true;
     error = null;
     
     try {
+      // Build arguments based on input mode
+      const arguments = {
+        length: summaryLength,
+        compression_ratio: compressionLevel
+      };
+      
+      if (inputMode === 'text') {
+        arguments.text = inputText;
+      } else {
+        arguments.url = inputUrl;
+      }
+      
       const response = await fetch('http://localhost:8000/tools/execute', {
         method: 'POST',
         headers: {
@@ -43,11 +59,7 @@
         },
         body: JSON.stringify({
           name: 'summarize_text',
-          arguments: {
-            text: inputText,
-            length: summaryLength,
-            compression_ratio: compressionLevel
-          }
+          arguments: arguments
         })
       });
 
@@ -68,6 +80,7 @@
 
   function useExample(text) {
     inputText = text;
+    inputMode = 'text';
   }
 
   function copyToClipboard() {
@@ -125,18 +138,71 @@
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     <!-- Input -->
     <div class="space-y-4">
+      <!-- Input Mode Tabs -->
+      <div class="border-b border-gray-200 dark:border-gray-700">
+        <nav class="-mb-px flex space-x-8">
+          <button
+            on:click={() => inputMode = 'text'}
+            class="{inputMode === 'text' ? 'border-orange-500 text-orange-600 dark:text-orange-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors"
+          >
+            Text Input
+          </button>
+          <button
+            on:click={() => inputMode = 'url'}
+            class="{inputMode === 'url' ? 'border-orange-500 text-orange-600 dark:text-orange-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors"
+          >
+            URL Input
+          </button>
+        </nav>
+      </div>
+
+      <!-- Input Header -->
       <div class="flex items-center justify-between">
-        <h3 class="text-lg font-medium text-gray-900 dark:text-white">Input Text</h3>
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+          {inputMode === 'text' ? 'Input Text' : 'Website URL'}
+        </h3>
         <span class="text-sm text-gray-500 dark:text-gray-400">
-          {inputText.length} characters
+          {inputMode === 'text' ? `${inputText.length} characters` : inputUrl ? '✓ URL entered' : 'Enter URL'}
         </span>
       </div>
       
-      <textarea
-        bind:value={inputText}
-        placeholder="Enter long text to summarize..."
-        class="w-full h-64 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-      ></textarea>
+      <!-- Text Input Mode -->
+      {#if inputMode === 'text'}
+        <textarea
+          bind:value={inputText}
+          placeholder="Enter long text to summarize..."
+          class="w-full h-64 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+        ></textarea>
+      {:else}
+        <!-- URL Input Mode -->
+        <div class="space-y-4">
+          <input
+            type="url"
+            bind:value={inputUrl}
+            placeholder="https://example.com/article-to-summarize"
+            class="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+          />
+          
+          <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div class="flex items-start space-x-3">
+              <div class="flex-shrink-0">
+                <svg class="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                </svg>
+              </div>
+              <div class="text-sm text-blue-700 dark:text-blue-300">
+                <p class="font-medium">URL Input Tips:</p>
+                <ul class="mt-1 list-disc list-inside space-y-1">
+                  <li>Enter any web article, blog post, or news article URL</li>
+                  <li>The system will extract the main content automatically</li>
+                  <li>Works best with content-rich pages (articles, documentation, etc.)</li>
+                  <li>Page title will be included in the analysis context</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      {/if}
       
       <!-- Summary Options -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -173,15 +239,15 @@
       
       <button
         on:click={summarizeText}
-        disabled={!inputText.trim() || isProcessing}
+        disabled={(inputMode === 'text' && !inputText.trim()) || (inputMode === 'url' && !inputUrl.trim()) || isProcessing}
         class="w-full flex items-center justify-center px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors"
       >
         {#if isProcessing}
           <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-          Summarizing...
+          {inputMode === 'url' ? 'Fetching & Summarizing...' : 'Summarizing...'}
         {:else}
           <Play size={16} class="mr-2" />
-          Summarize Text
+          {inputMode === 'url' ? 'Summarize from URL' : 'Summarize Text'}
         {/if}
       </button>
     </div>

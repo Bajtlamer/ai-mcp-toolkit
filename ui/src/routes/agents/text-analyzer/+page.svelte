@@ -2,6 +2,8 @@
   import { BarChart3, Play, Download, Hash, Type, BookOpen, Target } from 'lucide-svelte';
 
   let inputText = '';
+  let inputUrl = '';
+  let inputMode = 'text'; // 'text' or 'url'
   let basicStats = null;
   let wordFrequency = null;
   let readabilityStats = null;
@@ -20,7 +22,9 @@
   ];
 
   async function analyzeText() {
-    if (!inputText.trim()) return;
+    // Validate input based on mode
+    if (inputMode === 'text' && !inputText.trim()) return;
+    if (inputMode === 'url' && !inputUrl.trim()) return;
     
     isProcessing = true;
     error = null;
@@ -31,12 +35,20 @@
     selectedWord = null;
     
     try {
+      // Build arguments based on input mode
+      const arguments = {};
+      if (inputMode === 'text') {
+        arguments.text = inputText;
+      } else {
+        arguments.url = inputUrl;
+      }
+      
       // Run all analyses in parallel
       const [basicResult, wordFreqResult, readabilityResult, complexityResult] = await Promise.all([
-        executeAnalysis('analyze_text_basic', { text: inputText }),
-        executeAnalysis('word_frequency_analysis', { text: inputText, top_n: 20 }),
-        executeAnalysis('analyze_readability', { text: inputText }),
-        executeAnalysis('text_complexity_analysis', { text: inputText })
+        executeAnalysis('analyze_text_basic', arguments),
+        executeAnalysis('word_frequency_analysis', { ...arguments, top_n: 20 }),
+        executeAnalysis('analyze_readability', arguments),
+        executeAnalysis('text_complexity_analysis', arguments)
       ]);
       
       basicStats = basicResult;
@@ -74,6 +86,7 @@
 
   function useExample(text) {
     inputText = text;
+    inputMode = 'text';
   }
 
   function downloadAnalysis() {
@@ -183,8 +196,28 @@
   <!-- Input Interface -->
   <div class="mb-6">
     <div class="space-y-4">
+      <!-- Input Mode Tabs -->
+      <div class="border-b border-gray-200 dark:border-gray-700">
+        <nav class="-mb-px flex space-x-8">
+          <button
+            on:click={() => inputMode = 'text'}
+            class="{inputMode === 'text' ? 'border-green-500 text-green-600 dark:text-green-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors"
+          >
+            Text Input
+          </button>
+          <button
+            on:click={() => inputMode = 'url'}
+            class="{inputMode === 'url' ? 'border-green-500 text-green-600 dark:text-green-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors"
+          >
+            URL Input
+          </button>
+        </nav>
+      </div>
+      
       <div class="flex items-center justify-between">
-        <h3 class="text-lg font-medium text-gray-900 dark:text-white">Input Text</h3>
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+          {inputMode === 'text' ? 'Input Text' : 'Website URL'}
+        </h3>
         <div class="flex items-center space-x-4">
           {#if basicStats}
             <div class="flex items-center space-x-3 text-xs text-gray-500 dark:text-gray-400">
@@ -205,29 +238,61 @@
             </div>
           {/if}
           <span class="text-sm text-gray-500 dark:text-gray-400">
-            {inputText.length} characters
+            {inputMode === 'text' ? `${inputText.length} characters` : inputUrl ? '✓ URL entered' : 'Enter URL'}
           </span>
         </div>
       </div>
       
-      <textarea
-        bind:value={inputText}
-        placeholder="Enter text to analyze statistics, word frequency, density, and more..."
-        class="w-full h-32 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-      ></textarea>
+      <!-- Text Input Mode -->
+      {#if inputMode === 'text'}
+        <textarea
+          bind:value={inputText}
+          placeholder="Enter text to analyze statistics, word frequency, density, and more..."
+          class="w-full h-32 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+        ></textarea>
+      {:else}
+        <!-- URL Input Mode -->
+        <div class="space-y-4">
+          <input
+            type="url"
+            bind:value={inputUrl}
+            placeholder="https://example.com/article-to-analyze"
+            class="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+          />
+          
+          <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div class="flex items-start space-x-3">
+              <div class="flex-shrink-0">
+                <svg class="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                </svg>
+              </div>
+              <div class="text-sm text-blue-700 dark:text-blue-300">
+                <p class="font-medium">URL Analysis Features:</p>
+                <ul class="mt-1 list-disc list-inside space-y-1">
+                  <li>Extract and analyze content from any web article or blog post</li>
+                  <li>Get statistics on readability, word frequency, and complexity</li>
+                  <li>Works with news articles, documentation, and content-rich pages</li>
+                  <li>Page title included in analysis context for better insights</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      {/if}
       
       <div class="flex flex-wrap gap-3">
         <button
           on:click={analyzeText}
-          disabled={!inputText.trim() || isProcessing}
+          disabled={(inputMode === 'text' && !inputText.trim()) || (inputMode === 'url' && !inputUrl.trim()) || isProcessing}
           class="flex items-center justify-center px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors"
         >
           {#if isProcessing}
             <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-            Analyzing Text...
+            {inputMode === 'url' ? 'Fetching & Analyzing...' : 'Analyzing Text...'}
           {:else}
             <BarChart3 size={16} class="mr-2" />
-            Analyze Text
+            {inputMode === 'url' ? 'Analyze from URL' : 'Analyze Text'}
           {/if}
         </button>
         
