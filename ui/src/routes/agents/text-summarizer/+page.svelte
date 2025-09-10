@@ -135,11 +135,11 @@
   </div>
 
   <!-- Input/Output Interface -->
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[600px]">
     <!-- Input -->
-    <div class="space-y-4">
+    <div class="flex flex-col h-full">
       <!-- Input Mode Tabs -->
-      <div class="border-b border-gray-200 dark:border-gray-700">
+      <div class="border-b border-gray-200 dark:border-gray-700 mb-4">
         <nav class="-mb-px flex space-x-8">
           <button
             on:click={() => inputMode = 'text'}
@@ -157,7 +157,7 @@
       </div>
 
       <!-- Input Header -->
-      <div class="flex items-center justify-between">
+      <div class="flex items-center justify-between mb-4">
         <h3 class="text-lg font-medium text-gray-900 dark:text-white">
           {inputMode === 'text' ? 'Input Text' : 'Website URL'}
         </h3>
@@ -166,46 +166,49 @@
         </span>
       </div>
       
-      <!-- Text Input Mode -->
-      {#if inputMode === 'text'}
-        <textarea
-          bind:value={inputText}
-          placeholder="Enter long text to summarize..."
-          class="w-full h-64 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-        ></textarea>
-      {:else}
-        <!-- URL Input Mode -->
-        <div class="space-y-4">
-          <input
-            type="url"
-            bind:value={inputUrl}
-            placeholder="https://example.com/article-to-summarize"
-            class="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-          />
-          
-          <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <div class="flex items-start space-x-3">
-              <div class="flex-shrink-0">
-                <svg class="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
-                </svg>
-              </div>
-              <div class="text-sm text-blue-700 dark:text-blue-300">
-                <p class="font-medium">URL Input Tips:</p>
-                <ul class="mt-1 list-disc list-inside space-y-1">
-                  <li>Enter any web article, blog post, or news article URL</li>
-                  <li>The system will extract the main content automatically</li>
-                  <li>Works best with content-rich pages (articles, documentation, etc.)</li>
-                  <li>Page title will be included in the analysis context</li>
-                </ul>
+      <!-- Input Content Area -->
+      <div class="flex-1 mb-4">
+        {#if inputMode === 'text'}
+          <!-- Text Input Mode -->
+          <textarea
+            bind:value={inputText}
+            placeholder="Enter long text to summarize..."
+            class="w-full h-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+          ></textarea>
+        {:else}
+          <!-- URL Input Mode -->
+          <div class="h-full flex flex-col space-y-4">
+            <input
+              type="url"
+              bind:value={inputUrl}
+              placeholder="https://example.com/article-to-summarize"
+              class="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+            />
+            
+            <div class="flex-1 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div class="flex items-start space-x-3">
+                <div class="flex-shrink-0">
+                  <svg class="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                  </svg>
+                </div>
+                <div class="text-sm text-blue-700 dark:text-blue-300">
+                  <p class="font-medium">URL Input Tips:</p>
+                  <ul class="mt-1 list-disc list-inside space-y-1">
+                    <li>Enter any web article, blog post, or news article URL</li>
+                    <li>The system will extract the main content automatically</li>
+                    <li>Works best with content-rich pages (articles, documentation, etc.)</li>
+                    <li>Page title will be included in the analysis context</li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      {/if}
-      
+        {/if}
+      </div>
+
       <!-- Summary Options -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <!-- Compression Level -->
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -253,8 +256,9 @@
     </div>
 
     <!-- Output -->
-    <div class="space-y-4">
-      <div class="flex items-center justify-between">
+    <div class="flex flex-col h-full">
+      <!-- Output Header -->
+      <div class="flex items-center justify-between mb-4">
         <div>
           <h3 class="text-lg font-medium text-gray-900 dark:text-white">Summary</h3>
           {#if outputText && inputText}
@@ -284,7 +288,8 @@
         {/if}
       </div>
       
-      <div class="w-full h-64 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800 overflow-y-auto">
+      <!-- Output Content Area -->
+      <div class="flex-1 w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800 overflow-y-auto">
         {#if error}
           <div class="text-red-600 dark:text-red-400">
             <strong>Error:</strong> {error}
