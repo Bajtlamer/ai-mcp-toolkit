@@ -28,6 +28,7 @@ class TextAnonymizerAgent(BaseAgent):
             'url': r'https?://(?:[-\w.])+(?:[:\d]+)?(?:/(?:[\w/_.])*(?:\?(?:[\w&=%.])*)?(?:#(?:\w)*)?)?',
             'date': r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|\b\d{4}[/-]\d{1,2}[/-]\d{1,2}\b',
             'address_number': r'\b\d+\s+[A-Za-z\s]+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Court|Ct)\b',
+            'name': r'\b[A-Z][a-z]+\s+[A-Z][a-z]+\b',  # Basic pattern for First Last names
         }
 
     def get_tools(self) -> List[Tool]:
@@ -46,7 +47,7 @@ class TextAnonymizerAgent(BaseAgent):
                         "anonymization_level": {
                             "type": "string",
                             "description": "Level of anonymization to apply",
-                            "enum": ["basic", "standard", "aggressive"],
+                            "enum": ["basic", "standard", "aggressive", "strict"],
                             "default": "standard"
                         },
                         "replacement_strategy": {
@@ -385,7 +386,10 @@ Only include items with confidence >= {threshold}. Format as: TYPE:TEXT:CONFIDEN
                 'credit_card': self.patterns['credit_card'],
                 'ip_address': self.patterns['ip_address'],
             }
-        else:  # aggressive
+        elif level in ["aggressive", "strict"]:
+            return self.patterns
+        else:
+            # Fallback to all patterns for unknown levels
             return self.patterns
 
     def _generate_replacement(self, original: str, pattern_type: str, strategy: str, preserve_structure: bool) -> str:
@@ -409,7 +413,8 @@ Only include items with confidence >= {threshold}. Format as: TYPE:TEXT:CONFIDEN
                 'ip_address': '[IP_ADDRESS]',
                 'url': '[URL]',
                 'date': '[DATE]',
-                'address_number': '[ADDRESS]'
+                'address_number': '[ADDRESS]',
+                'name': '[NAME]'
             }
             return placeholder_map.get(pattern_type, '[SENSITIVE_DATA]')
 
@@ -423,6 +428,7 @@ Only include items with confidence >= {threshold}. Format as: TYPE:TEXT:CONFIDEN
             'ip_address': '192.168.1.1',
             'url': 'https://example.com',
             'date': '01/01/2000',
-            'address_number': '123 Main Street'
+            'address_number': '123 Main Street',
+            'name': 'John Doe'
         }
         return fake_data_map.get(pattern_type, 'FAKE_DATA')

@@ -1,6 +1,4 @@
 <script>
-  import { onMount } from 'svelte';
-  import { toast } from 'svelte-french-toast';
   import { 
     Shield, 
     Play, 
@@ -12,14 +10,24 @@
     AlertTriangle,
     CheckCircle,
     Info,
-    Zap
+    Zap,
+    Lock,
+    User,
+    Phone,
+    MapPin,
+    CreditCard,
+    Hash,
+    Trash2
   } from 'lucide-svelte';
   
   let inputText = '';
   let outputText = '';
   let loading = false;
-  let showOriginal = true;
+  let showOriginal = false;
   let analysisResults = null;
+  let selectedWord = null;
+  let detectionResults = null;
+  let error = null;
   
   // Settings
   let anonymizationLevel = 'standard';
@@ -31,52 +39,116 @@
   const exampleTexts = [
     {
       title: 'Business Email',
-      text: 'Dear John Smith, your account number 4532-1234-5678-9012 has been updated. Please contact us at support@company.com or call (555) 123-4567 if you have any questions. Best regards, Sarah Johnson, Customer Service Manager.'
+      icon: User,
+      text: 'Dear John Smith, your account number 4532-1234-5678-9012 has been updated. Please contact us at support@company.com or call (555) 123-4567 if you have any questions. Best regards, Sarah Johnson, Customer Service Manager.',
+      sensitiveItems: ['Names', 'Email', 'Phone', 'Credit Card']
     },
     {
       title: 'Medical Record',
-      text: 'Patient: Mary Wilson, DOB: 03/15/1985, SSN: 123-45-6789. Address: 456 Oak Street, Springfield, IL. Emergency contact: Robert Wilson (husband) at 555-987-6543. Patient reports chest pain and shortness of breath.'
+      icon: Shield,
+      text: 'Patient: Mary Wilson, DOB: 03/15/1985, SSN: 123-45-6789. Address: 456 Oak Street, Springfield, IL. Emergency contact: Robert Wilson (husband) at 555-987-6543. Patient reports chest pain and shortness of breath.',
+      sensitiveItems: ['Names', 'DOB', 'SSN', 'Address', 'Phone']
     },
     {
       title: 'HR Document',
-      text: 'Employee: David Chen (ID: EMP001234), hired on January 15, 2020. Salary: $75,000. Personal email: david.chen@gmail.com, Phone: 312-555-0123. Lives at 789 Pine Ave, Chicago, IL 60601.'
+      icon: CreditCard,
+      text: 'Employee: David Chen (ID: EMP001234), hired on January 15, 2020. Salary: $75,000. Personal email: david.chen@gmail.com, Phone: 312-555-0123. Lives at 789 Pine Ave, Chicago, IL 60601.',
+      sensitiveItems: ['Names', 'ID', 'Email', 'Phone', 'Address', 'Salary']
     }
   ];
   
   const anonymizationLevels = [
-    { value: 'basic', label: 'Basic', description: 'Remove emails and phone numbers only' },
-    { value: 'standard', label: 'Standard', description: 'Remove common PII including SSN, credit cards' },
-    { value: 'aggressive', label: 'Aggressive', description: 'Remove all detectable sensitive information' }
+    { 
+      value: 'basic', 
+      label: 'Basic', 
+      icon: Eye,
+      color: 'blue',
+      description: 'Remove emails and phone numbers only',
+      protects: ['Email addresses', 'Phone numbers']
+    },
+    { 
+      value: 'standard', 
+      label: 'Standard', 
+      icon: Shield,
+      color: 'green',
+      description: 'Remove common PII including SSN, credit cards',
+      protects: ['Emails', 'Phones', 'SSN', 'Credit cards', 'IP addresses']
+    },
+    { 
+      value: 'aggressive', 
+      label: 'Aggressive', 
+      icon: Lock,
+      color: 'orange',
+      description: 'Remove all detectable sensitive information',
+      protects: ['All standard items', 'URLs', 'Dates', 'Addresses']
+    },
+    { 
+      value: 'strict', 
+      label: 'Strict', 
+      icon: Lock,
+      color: 'red',
+      description: 'Maximum protection including names with pattern-based detection and chosen replacement strategy',
+      protects: ['Everything above', 'Personal names', 'Pattern-based detection', 'Respects replacement strategy']
+    }
   ];
   
   const replacementStrategies = [
-    { value: 'placeholder', label: 'Placeholders', description: 'Replace with [EMAIL], [PHONE], etc.' },
-    { value: 'fake_data', label: 'Fake Data', description: 'Replace with realistic fake data' },
-    { value: 'hash', label: 'Hash', description: 'Replace with cryptographic hashes' },
-    { value: 'remove', label: 'Remove', description: 'Simply remove sensitive content' }
+    { 
+      value: 'placeholder', 
+      label: 'Placeholders', 
+      icon: Hash,
+      description: 'Replace with [EMAIL], [PHONE], etc.',
+      example: '[EMAIL], [PHONE], [NAME]'
+    },
+    { 
+      value: 'fake_data', 
+      label: 'Fake Data', 
+      icon: User,
+      description: 'Replace with realistic fake data',
+      example: 'user@example.com, (555) 123-4567'
+    },
+    { 
+      value: 'hash', 
+      label: 'Hash', 
+      icon: Lock,
+      description: 'Replace with cryptographic hashes',
+      example: '[HASH_a1b2c3d4]'
+    },
+    { 
+      value: 'remove', 
+      label: 'Remove', 
+      icon: Trash2,
+      description: 'Simply remove sensitive content',
+      example: '[REDACTED]'
+    }
   ];
   
   async function anonymizeText() {
     if (!inputText.trim()) {
-      toast.error('Please enter some text to anonymize');
+      error = 'Please enter some text to anonymize';
       return;
     }
     
     loading = true;
     outputText = '';
     analysisResults = null;
+    error = null;
     
     try {
-      const endpoint = useSmartAnonymization ? 'smart_anonymize' : 'anonymize_text';
-      const payload = {
+      // Use smart anonymization only when explicitly enabled (but not for strict level)
+      // Strict level uses regular anonymization with all patterns enabled
+      const useAI = useSmartAnonymization && anonymizationLevel !== 'strict';
+      const endpoint = useAI ? 'smart_anonymize' : 'anonymize_text';
+      
+      const payload = useAI ? {
         text: inputText,
-        ...(useSmartAnonymization ? {
-          preserve_meaning: preserveStructure
-        } : {
-          anonymization_level: anonymizationLevel,
-          replacement_strategy: replacementStrategy,
-          preserve_structure: preserveStructure
-        })
+        preserve_meaning: preserveStructure,
+        context: 'general'
+      } : {
+        text: inputText,
+        anonymization_level: anonymizationLevel,
+        replacement_strategy: replacementStrategy,
+        preserve_structure: preserveStructure
       };
       
       const response = await fetch('http://localhost:8000/tools/execute', {
@@ -94,16 +166,46 @@
       
       if (result.success) {
         outputText = result.result;
-        toast.success('Text anonymized successfully');
+        
+        // Generate analysis report
+        await generateAnalysisReport();
+        
       } else {
-        toast.error(result.error || 'Failed to anonymize text');
+        error = result.error || 'Failed to anonymize text';
         console.error('Anonymization error:', result.error);
       }
-    } catch (error) {
-      console.error('Anonymization error:', error);
-      toast.error('Failed to connect to server. Make sure the MCP server is running on port 8000.');
+    } catch (err) {
+      console.error('Anonymization error:', err);
+      error = 'Failed to connect to server. Make sure the MCP server is running on port 8000.';
     } finally {
       loading = false;
+    }
+  }
+  
+  async function generateAnalysisReport() {
+    if (!outputText) return;
+    
+    try {
+      const response = await fetch('http://localhost:8000/tools/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'create_anonymization_report',
+          arguments: {
+            original_text: inputText,
+            anonymized_text: outputText
+          }
+        })
+      });
+      
+      const result = await response.json();
+      if (result.success) {
+        analysisResults = JSON.parse(result.result);
+      }
+    } catch (err) {
+      console.warn('Could not generate analysis report:', err);
     }
   }
   
@@ -195,251 +297,284 @@
   <title>Text Anonymizer - AI MCP Toolkit</title>
 </svelte:head>
 
-<div class="space-y-6">
+<div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
   <!-- Header -->
-  <div class="flex items-center justify-between">
-    <div class="flex items-center space-x-3">
-      <div class="w-10 h-10 bg-red-100 dark:bg-red-900 rounded-lg flex items-center justify-center">
-        <Shield class="w-5 h-5 text-red-600 dark:text-red-400" />
+  <div class="mb-8">
+    <div class="flex items-center space-x-3 mb-4">
+      <div class="w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center">
+        <Shield size={24} class="text-white" />
       </div>
       <div>
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Text Anonymizer</h1>
-        <p class="text-gray-600 dark:text-gray-400">Remove sensitive personal information from text</p>
+        <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Text Anonymizer</h1>
+        <p class="text-gray-600 dark:text-gray-400">Protect sensitive information with intelligent anonymization</p>
       </div>
-    </div>
-    
-    <div class="flex items-center space-x-2">
-      <button
-        on:click={detectSensitiveInfo}
-        class="btn btn-secondary"
-      >
-        <Eye class="w-4 h-4 mr-2" />
-        Detect PII
-      </button>
-      
-      <button
-        on:click={() => showAdvancedSettings = !showAdvancedSettings}
-        class="btn btn-secondary"
-      >
-        <Settings class="w-4 h-4 mr-2" />
-        Settings
-      </button>
     </div>
   </div>
   
-  <!-- Settings Panel -->
-  {#if showAdvancedSettings}
-    <div class="card p-6 animate-slide-down">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Anonymization Settings</h3>
-      
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Anonymization Level
-            </label>
-            <div class="space-y-2">
-              {#each anonymizationLevels as level}
-                <label class="flex items-start space-x-3">
-                  <input
-                    type="radio"
-                    bind:group={anonymizationLevel}
-                    value={level.value}
-                    class="mt-1"
-                  />
-                  <div>
-                    <div class="font-medium text-gray-900 dark:text-white">{level.label}</div>
-                    <div class="text-sm text-gray-500 dark:text-gray-400">{level.description}</div>
-                  </div>
-                </label>
-              {/each}
+  <!-- Quick Examples -->
+  <div class="mb-6">
+    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-3">Quick Examples</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {#each exampleTexts as example}
+        <button
+          on:click={() => loadExample(example)}
+          class="p-4 text-left bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 transition-all duration-200 group"
+        >
+          <div class="flex items-center space-x-3 mb-3">
+            <div class="w-8 h-8 bg-red-100 dark:bg-red-900/50 rounded-lg flex items-center justify-center">
+              <svelte:component this={example.icon} size={16} class="text-red-600 dark:text-red-400" />
+            </div>
+            <div>
+              <h3 class="font-medium text-gray-900 dark:text-white">{example.title}</h3>
             </div>
           </div>
-        </div>
-        
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Replacement Strategy
-            </label>
-            <div class="space-y-2">
-              {#each replacementStrategies as strategy}
-                <label class="flex items-start space-x-3">
-                  <input
-                    type="radio"
-                    bind:group={replacementStrategy}
-                    value={strategy.value}
-                    class="mt-1"
-                  />
-                  <div>
-                    <div class="font-medium text-gray-900 dark:text-white">{strategy.label}</div>
-                    <div class="text-sm text-gray-500 dark:text-gray-400">{strategy.description}</div>
-                  </div>
-                </label>
-              {/each}
-            </div>
+          <p class="text-sm text-gray-600 dark:text-gray-400 line-clamp-3 mb-3">
+            {example.text}
+          </p>
+          <div class="flex flex-wrap gap-1">
+            {#each example.sensitiveItems.slice(0, 3) as item}
+              <span class="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-xs rounded-full">
+                {item}
+              </span>
+            {/each}
+            {#if example.sensitiveItems.length > 3}
+              <span class="px-2 py-1 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded-full">
+                +{example.sensitiveItems.length - 3}
+              </span>
+            {/if}
           </div>
-        </div>
-      </div>
-      
-      <div class="mt-6 space-y-4">
-        <label class="flex items-center space-x-3">
-          <input type="checkbox" bind:checked={preserveStructure} />
-          <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-            Preserve text structure and readability
-          </span>
-        </label>
-        
-        <label class="flex items-center space-x-3">
-          <input type="checkbox" bind:checked={useSmartAnonymization} />
-          <div class="flex items-center space-x-2">
-            <Zap class="w-4 h-4 text-yellow-500" />
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Use AI-powered smart anonymization
-            </span>
-          </div>
-        </label>
-      </div>
+        </button>
+      {/each}
     </div>
-  {/if}
+  </div>
   
-  <!-- Example Texts -->
-  <div class="card">
-    <div class="p-4 border-b border-gray-200 dark:border-gray-700">
-      <h3 class="text-lg font-medium text-gray-900 dark:text-white">Example Texts</h3>
-    </div>
-    <div class="p-4">
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {#each exampleTexts as example}
-          <button
-            on:click={() => loadExample(example)}
-            class="text-left p-4 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-sm transition-all"
-          >
-            <h4 class="font-medium text-gray-900 dark:text-white mb-2">{example.title}</h4>
-            <p class="text-sm text-gray-500 dark:text-gray-400 line-clamp-3">
-              {example.text}
-            </p>
-          </button>
+  <!-- Anonymization Settings -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+    <!-- Anonymization Level -->
+    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Anonymization Level</h3>
+      <div class="space-y-3">
+        {#each anonymizationLevels as level}
+          <label class="flex items-start space-x-3 p-3 rounded-lg border cursor-pointer transition-colors {
+            anonymizationLevel === level.value 
+              ? `border-${level.color}-200 dark:border-${level.color}-800 bg-${level.color}-50 dark:bg-${level.color}-900/20` 
+              : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+          }">
+            <input
+              type="radio"
+              bind:group={anonymizationLevel}
+              value={level.value}
+              class="mt-1"
+            />
+            <div class="flex-1">
+              <div class="flex items-center space-x-2 mb-2">
+                <svelte:component this={level.icon} size={16} class="text-{level.color}-600 dark:text-{level.color}-400" />
+                <div class="font-medium text-gray-900 dark:text-white">{level.label}</div>
+                {#if level.value === 'strict'}
+                  <span class="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-xs rounded-full font-medium">
+                    All Patterns
+                  </span>
+                {/if}
+              </div>
+              <div class="text-sm text-gray-600 dark:text-gray-400 mb-2">{level.description}</div>
+              <div class="flex flex-wrap gap-1">
+                {#each level.protects.slice(0, 3) as item}
+                  <span class="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs rounded">
+                    {item}
+                  </span>
+                {/each}
+                {#if level.protects.length > 3}
+                  <span class="px-2 py-1 bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-400 text-xs rounded">
+                    +{level.protects.length - 3} more
+                  </span>
+                {/if}
+              </div>
+            </div>
+          </label>
         {/each}
+      </div>
+    </div>
+    
+    <!-- Replacement Strategy -->
+    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Replacement Strategy</h3>
+      <div class="space-y-3">
+        {#each replacementStrategies as strategy}
+          <label class="flex items-start space-x-3 p-3 rounded-lg border cursor-pointer transition-colors {
+            replacementStrategy === strategy.value 
+              ? 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20' 
+              : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+          }">
+            <input
+              type="radio"
+              bind:group={replacementStrategy}
+              value={strategy.value}
+              class="mt-1"
+            />
+            <div class="flex-1">
+              <div class="flex items-center space-x-2 mb-2">
+                <svelte:component this={strategy.icon} size={16} class="text-blue-600 dark:text-blue-400" />
+                <div class="font-medium text-gray-900 dark:text-white">{strategy.label}</div>
+              </div>
+              <div class="text-sm text-gray-600 dark:text-gray-400 mb-2">{strategy.description}</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400 font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+                Example: {strategy.example}
+              </div>
+            </div>
+          </label>
+        {/each}
+      </div>
+      
+      <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+        <label class="flex items-center space-x-3">
+          <input type="checkbox" bind:checked={preserveStructure} class="rounded" />
+          <span class="text-sm text-gray-700 dark:text-gray-300">Preserve text structure and readability</span>
+        </label>
+        
+        <label class="flex items-center space-x-3">
+          <input type="checkbox" bind:checked={useSmartAnonymization} class="rounded" />
+          <div class="flex items-center space-x-2">
+            <Zap size={14} class="text-yellow-500" />
+            <span class="text-sm text-gray-700 dark:text-gray-300">Use AI-powered smart anonymization</span>
+          </div>
+        </label>
+        
+        {#if useSmartAnonymization}
+          <div class="ml-6 text-xs text-yellow-600 dark:text-yellow-400">
+            ⚠️ AI mode ignores replacement strategy and uses its own placeholders
+          </div>
+        {/if}
       </div>
     </div>
   </div>
   
   <!-- Input/Output Section -->
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-    <!-- Input -->
-    <div class="card">
-      <div class="p-4 border-b border-gray-200 dark:border-gray-700">
-        <div class="flex items-center justify-between">
-          <h3 class="text-lg font-medium text-gray-900 dark:text-white">Input Text</h3>
-          <div class="text-sm text-gray-500 dark:text-gray-400">
-            {inputText.length} characters
-          </div>
-        </div>
-      </div>
-      
-      <div class="p-4">
-        <textarea
-          bind:value={inputText}
-          placeholder="Enter text containing sensitive information to anonymize..."
-          class="textarea-field h-64 resize-none"
-          disabled={loading}
-        ></textarea>
-        
-        <div class="mt-4 flex justify-center">
-          <button
-            on:click={anonymizeText}
-            disabled={loading || !inputText.trim()}
-            class="btn btn-primary {loading ? 'opacity-50 cursor-not-allowed' : ''}"
-          >
-            {#if loading}
-              <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-              Processing...
-            {:else}
-              <Play class="w-4 h-4 mr-2" />
-              Anonymize Text
-            {/if}
-          </button>
+  <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm mb-6">
+    <div class="border-b border-gray-200 dark:border-gray-700 p-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Text Anonymization</h3>
+        <div class="flex items-center space-x-2">
+          <span class="text-sm text-gray-500 dark:text-gray-400">{inputText.length} characters</span>
+          {#if outputText}
+            <button
+              on:click={() => showOriginal = !showOriginal}
+              class="flex items-center px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md transition-colors"
+            >
+              {#if showOriginal}
+                <EyeOff size={12} class="mr-1" />
+                Hide Original
+              {:else}
+                <Eye size={12} class="mr-1" />
+                Show Original
+              {/if}
+            </button>
+          {/if}
         </div>
       </div>
     </div>
     
-    <!-- Output -->
-    <div class="card">
-      <div class="p-4 border-b border-gray-200 dark:border-gray-700">
-        <div class="flex items-center justify-between">
-          <h3 class="text-lg font-medium text-gray-900 dark:text-white">Anonymized Output</h3>
-          {#if outputText}
-            <div class="flex items-center space-x-2">
-              <button
-                on:click={() => showOriginal = !showOriginal}
-                class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-              >
-                {#if showOriginal}
-                  <EyeOff class="w-4 h-4 mr-1 inline" />
-                  Hide Original
-                {:else}
-                  <Eye class="w-4 h-4 mr-1 inline" />
-                  Show Original
-                {/if}
-              </button>
-              
-              <button
-                on:click={() => copyToClipboard(outputText)}
-                class="btn-secondary p-2"
-                title="Copy to clipboard"
-              >
-                <Copy class="w-4 h-4" />
-              </button>
-              
-              <button
-                on:click={downloadResult}
-                class="btn-secondary p-2"
-                title="Download result"
-              >
-                <Download class="w-4 h-4" />
-              </button>
-            </div>
-          {/if}
-        </div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-0">
+      <!-- Input -->
+      <div class="p-4 border-r border-gray-200 dark:border-gray-700">
+        <textarea
+          bind:value={inputText}
+          placeholder="Enter text containing sensitive information to anonymize...\n\nExample:\nDear John Smith, please contact me at john.smith@company.com or call (555) 123-4567."
+          class="w-full h-80 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+          disabled={loading}
+        ></textarea>
       </div>
       
+      <!-- Output -->
       <div class="p-4">
         {#if loading}
-          <div class="h-64 flex items-center justify-center">
+          <div class="h-80 flex items-center justify-center">
             <div class="text-center">
-              <div class="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <div class="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
               <p class="text-gray-500 dark:text-gray-400">Anonymizing text...</p>
+              {#if anonymizationLevel === 'strict'}
+                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Using all patterns including names...</p>
+              {/if}
             </div>
           </div>
         {:else if outputText}
           <div class="space-y-4">
-            <div class={`p-4 rounded-lg font-mono text-sm whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 border ${
-              showOriginal ? 'border-warning-200 dark:border-warning-800' : 'border-success-200 dark:border-success-800'
-            }`}>
-              {showOriginal ? inputText : outputText}
+            <div class="relative">
+              <div class="w-full h-80 p-3 border rounded-lg font-mono text-sm whitespace-pre-wrap overflow-y-auto {
+                showOriginal 
+                  ? 'border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/10' 
+                  : 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/10'
+              }">
+                {showOriginal ? inputText : outputText}
+              </div>
+              
+              <div class="absolute top-2 right-2 flex space-x-1">
+                <button
+                  on:click={() => copyToClipboard(showOriginal ? inputText : outputText)}
+                  class="p-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  title="Copy to clipboard"
+                >
+                  <Copy size={14} />
+                </button>
+                
+                <button
+                  on:click={downloadResult}
+                  class="p-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  title="Download result"
+                >
+                  <Download size={14} />
+                </button>
+              </div>
             </div>
             
-            {#if showOriginal}
-              <div class="flex items-center text-sm text-warning-600 dark:text-warning-400">
-                <AlertTriangle class="w-4 h-4 mr-2" />
+            <div class="flex items-center text-sm {
+              showOriginal 
+                ? 'text-orange-600 dark:text-orange-400' 
+                : 'text-green-600 dark:text-green-400'
+            }">
+              {#if showOriginal}
+                <AlertTriangle size={16} class="mr-2" />
                 Showing original text with sensitive information
-              </div>
-            {:else}
-              <div class="flex items-center text-sm text-success-600 dark:text-success-400">
-                <CheckCircle class="w-4 h-4 mr-2" />
+              {:else}
+                <CheckCircle size={16} class="mr-2" />
                 Showing anonymized text - safe to share
-              </div>
-            {/if}
+              {/if}
+            </div>
+          </div>
+        {:else if error}
+          <div class="h-80 flex items-center justify-center">
+            <div class="text-center">
+              <AlertTriangle size={48} class="mx-auto mb-4 text-red-400 opacity-50" />
+              <p class="text-red-600 dark:text-red-400">{error}</p>
+            </div>
           </div>
         {:else}
-          <div class="h-64 flex items-center justify-center text-gray-500 dark:text-gray-400">
+          <div class="h-80 flex items-center justify-center text-gray-500 dark:text-gray-400">
             <div class="text-center">
-              <Shield class="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <Shield size={48} class="mx-auto mb-4 opacity-50" />
               <p>Anonymized text will appear here</p>
+              <p class="text-sm mt-2">Enter text on the left and click "Anonymize Text"</p>
             </div>
           </div>
         {/if}
+      </div>
+    </div>
+    
+    <!-- Action Button -->
+    <div class="border-t border-gray-200 dark:border-gray-700 p-4">
+      <div class="flex justify-center">
+        <button
+          on:click={anonymizeText}
+          disabled={loading || !inputText.trim()}
+          class="flex items-center px-6 py-3 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 disabled:from-gray-400 disabled:to-gray-400 text-white font-medium rounded-lg transition-all duration-200 transform hover:scale-105 disabled:hover:scale-100 shadow-lg"
+        >
+          {#if loading}
+            <div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+            {anonymizationLevel === 'strict' ? 'Processing All Patterns...' : 'Processing...'}
+          {:else}
+            <Shield size={18} class="mr-2" />
+            Anonymize Text
+          {/if}
+        </button>
       </div>
     </div>
   </div>
