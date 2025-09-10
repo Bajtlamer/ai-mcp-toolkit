@@ -5,6 +5,21 @@
   let outputText = '';
   let isProcessing = false;
   let error = null;
+  let compressionLevel = 'high';
+  let summaryLength = 'short';
+  
+  const compressionOptions = [
+    { value: 'extreme', label: 'Extreme', description: 'Ultra-concise (< 5% of original)' },
+    { value: 'high', label: 'High', description: 'Very concise (5-10% of original)' },
+    { value: 'medium', label: 'Medium', description: 'Moderately concise (10-20% of original)' },
+    { value: 'low', label: 'Low', description: 'Mildly concise (20-30% of original)' }
+  ];
+  
+  const lengthOptions = [
+    { value: 'short', label: 'Short', description: '1-2 sentences (20-50 words)' },
+    { value: 'medium', label: 'Medium', description: '2-3 sentences (50-80 words)' },
+    { value: 'long', label: 'Long', description: '1 paragraph (80-120 words)' }
+  ];
 
   // Example texts for demonstration
   const examples = [
@@ -29,7 +44,9 @@
         body: JSON.stringify({
           name: 'summarize_text',
           arguments: {
-            text: inputText
+            text: inputText,
+            length: summaryLength,
+            compression_ratio: compressionLevel
           }
         })
       });
@@ -121,6 +138,39 @@
         class="w-full h-64 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
       ></textarea>
       
+      <!-- Summary Options -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Compression Level -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Compression Level
+          </label>
+          <select
+            bind:value={compressionLevel}
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+          >
+            {#each compressionOptions as option}
+              <option value={option.value}>{option.label} - {option.description}</option>
+            {/each}
+          </select>
+        </div>
+        
+        <!-- Summary Length -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Summary Length
+          </label>
+          <select
+            bind:value={summaryLength}
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+          >
+            {#each lengthOptions as option}
+              <option value={option.value}>{option.label} - {option.description}</option>
+            {/each}
+          </select>
+        </div>
+      </div>
+      
       <button
         on:click={summarizeText}
         disabled={!inputText.trim() || isProcessing}
@@ -139,7 +189,15 @@
     <!-- Output -->
     <div class="space-y-4">
       <div class="flex items-center justify-between">
-        <h3 class="text-lg font-medium text-gray-900 dark:text-white">Summary</h3>
+        <div>
+          <h3 class="text-lg font-medium text-gray-900 dark:text-white">Summary</h3>
+          {#if outputText && inputText}
+            <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Compressed from {inputText.length} to {outputText.length} characters 
+              ({Math.round((outputText.length / inputText.length) * 100)}% of original)
+            </div>
+          {/if}
+        </div>
         {#if outputText}
           <div class="flex space-x-2">
             <button
@@ -179,23 +237,29 @@
   <!-- Features -->
   <div class="mt-12">
     <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-6">Features</h2>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
       <div class="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
-        <h3 class="font-medium text-gray-900 dark:text-white mb-2">Concise Summaries</h3>
+        <h3 class="font-medium text-gray-900 dark:text-white mb-2">Aggressive Compression</h3>
         <p class="text-sm text-gray-600 dark:text-gray-400">
-          Creates brief, coherent summaries that capture the main points.
+          Reduces text to 5-30% of original length while preserving key information.
         </p>
       </div>
       <div class="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
-        <h3 class="font-medium text-gray-900 dark:text-white mb-2">Key Point Extraction</h3>
+        <h3 class="font-medium text-gray-900 dark:text-white mb-2">Customizable Compression</h3>
         <p class="text-sm text-gray-600 dark:text-gray-400">
-          Identifies and highlights the most important information.
+          Choose from extreme, high, medium, or low compression levels.
         </p>
       </div>
       <div class="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
-        <h3 class="font-medium text-gray-900 dark:text-white mb-2">Context Preservation</h3>
+        <h3 class="font-medium text-gray-900 dark:text-white mb-2">Smart Extraction</h3>
         <p class="text-sm text-gray-600 dark:text-gray-400">
-          Maintains the original meaning and context in the summary.
+          Identifies and retains only the most essential information.
+        </p>
+      </div>
+      <div class="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+        <h3 class="font-medium text-gray-900 dark:text-white mb-2">Length Control</h3>
+        <p class="text-sm text-gray-600 dark:text-gray-400">
+          Choose exact output length: short, medium, or long summaries.
         </p>
       </div>
     </div>

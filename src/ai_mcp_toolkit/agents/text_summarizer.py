@@ -39,7 +39,13 @@ class TextSummarizerAgent(BaseAgent):
                             "type": "string",
                             "description": "Desired summary length",
                             "enum": ["short", "medium", "long"],
-                            "default": "medium"
+                            "default": "short"
+                        },
+                        "compression_ratio": {
+                            "type": "string",
+                            "description": "How aggressively to compress the text",
+                            "enum": ["extreme", "high", "medium", "low"],
+                            "default": "high"
                         },
                         "focus": {
                             "type": "string",
@@ -128,10 +134,11 @@ class TextSummarizerAgent(BaseAgent):
         """Generate a summary of the text."""
         text = self.validate_text_input(arguments["text"])
         summary_type = arguments.get("summary_type", "abstractive")
-        length = arguments.get("length", "medium")
+        length = arguments.get("length", "short")
         focus = arguments.get("focus", "main_points")
+        compression_ratio = arguments.get("compression_ratio", "high")
         
-        system_prompt = self._build_summary_system_prompt(summary_type, length, focus)
+        system_prompt = self._build_summary_system_prompt(summary_type, length, focus, compression_ratio)
         
         # For very long texts, we might need to chunk them
         if len(text) > self.config.chunk_size:
@@ -232,33 +239,43 @@ Present the headlines as a numbered list."""
             response = await client.chat_completion(messages=messages)
             return response.response.strip()
 
-    def _build_summary_system_prompt(self, summary_type: str, length: str, focus: str) -> str:
+    def _build_summary_system_prompt(self, summary_type: str, length: str, focus: str, compression_ratio: str) -> str:
         """Build system prompt for text summarization."""
-        base_prompt = "You are an expert text summarizer. Your task is to create a high-quality summary of the provided text."
+        base_prompt = "You are an expert text summarizer. Your task is to create a high-quality, extremely concise summary that dramatically reduces the original text length while preserving essential information."
         
         type_instructions = {
-            "extractive": "Extract and combine the most important sentences from the original text.",
-            "abstractive": "Create a new, concise version that captures the main ideas in your own words.",
-            "bullet_points": "Summarize the key points as a bulleted list of important items.",
-            "key_insights": "Focus on the most significant insights, conclusions, and takeaways."
+            "extractive": "Extract and combine ONLY the most critical sentences from the original text.",
+            "abstractive": "Create a new, highly compressed version that captures ONLY the core essence in your own words.",
+            "bullet_points": "Summarize as the most essential bullet points only.",
+            "key_insights": "Focus ONLY on the most crucial insights and conclusions."
         }
         
+        # More aggressive length targets
         length_instructions = {
-            "short": "Keep the summary very brief - about 1-2 sentences or 50-100 words.",
-            "medium": "Create a moderate length summary - about 1-2 paragraphs or 100-200 words.",
-            "long": "Provide a comprehensive summary - about 2-3 paragraphs or 200-300 words."
+            "short": "Keep the summary extremely brief - maximum 1-2 sentences or 20-50 words.",
+            "medium": "Create a concise summary - maximum 2-3 sentences or 50-80 words.",
+            "long": "Provide a detailed but still compressed summary - maximum 1 paragraph or 80-120 words."
+        }
+        
+        # New compression ratio instructions
+        compression_instructions = {
+            "extreme": "Compress to less than 5% of original length. Use only the most essential words and phrases.",
+            "high": "Compress to 5-10% of original length. Be extremely selective about what to include.",
+            "medium": "Compress to 10-20% of original length. Focus on core concepts only.",
+            "low": "Compress to 20-30% of original length. Include main points with minimal detail."
         }
         
         focus_instructions = {
-            "main_points": "Focus on the central arguments and primary themes.",
-            "conclusions": "Emphasize the conclusions, results, and final outcomes.",
-            "actions": "Highlight actionable items, recommendations, and next steps.",
-            "facts": "Prioritize factual information, data, and objective details.",
-            "opinions": "Focus on viewpoints, opinions, and subjective assessments."
+            "main_points": "Focus ONLY on the most critical central arguments and primary themes.",
+            "conclusions": "Emphasize ONLY the most important conclusions, results, and final outcomes.",
+            "actions": "Highlight ONLY the most essential actionable items and recommendations.",
+            "facts": "Prioritize ONLY the most crucial factual information and data.",
+            "opinions": "Focus ONLY on the most significant viewpoints and assessments."
         }
         
         type_instruction = type_instructions.get(summary_type, type_instructions["abstractive"])
-        length_instruction = length_instructions.get(length, length_instructions["medium"])
+        length_instruction = length_instructions.get(length, length_instructions["short"])
         focus_instruction = focus_instructions.get(focus, focus_instructions["main_points"])
+        compression_instruction = compression_instructions.get(compression_ratio, compression_instructions["high"])
         
-        return f"{base_prompt}\n\n{type_instruction}\n\n{length_instruction}\n\n{focus_instruction}\n\nEnsure your summary is accurate, well-structured, and maintains the original meaning."
+        return f"{base_prompt}\n\n{type_instruction}\n\n{length_instruction}\n\n{focus_instruction}\n\n{compression_instruction}\n\nIMPORTANT: Be ruthlessly concise. Every word must add significant value. Eliminate all redundancy, filler words, and minor details. Your summary should be dramatically shorter than the original while capturing its essence."
