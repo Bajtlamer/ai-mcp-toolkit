@@ -1,5 +1,7 @@
 <script>
-  import { Settings, Server, Palette, Globe, Shield, Download, RefreshCw } from 'lucide-svelte';
+  import { Settings, Server, Palette, Globe, Shield, Download, RefreshCw, CheckCircle } from 'lucide-svelte';
+  import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
 
   let serverConfig = {
     host: 'localhost',
@@ -24,6 +26,86 @@
   };
 
   let serverStatus = 'unknown'; // connected, disconnected, unknown
+  let saveStatus = ''; // 'saving', 'saved', ''
+  
+  // Load settings from localStorage on mount
+  onMount(() => {
+    loadSettings();
+  });
+  
+  function loadSettings() {
+    if (browser) {
+      const savedServerConfig = localStorage.getItem('ai-mcp-server-config');
+      if (savedServerConfig) {
+        serverConfig = { ...serverConfig, ...JSON.parse(savedServerConfig) };
+      }
+      
+      const savedUiConfig = localStorage.getItem('ai-mcp-ui-config');
+      if (savedUiConfig) {
+        uiConfig = { ...uiConfig, ...JSON.parse(savedUiConfig) };
+      }
+      
+      const savedProcessingConfig = localStorage.getItem('ai-mcp-processing-config');
+      if (savedProcessingConfig) {
+        processingConfig = { ...processingConfig, ...JSON.parse(savedProcessingConfig) };
+      }
+      
+      // Set initial theme
+      applyTheme();
+    }
+  }
+  
+  function saveSettings() {
+    if (browser) {
+      saveStatus = 'saving';
+      localStorage.setItem('ai-mcp-server-config', JSON.stringify(serverConfig));
+      localStorage.setItem('ai-mcp-ui-config', JSON.stringify(uiConfig));
+      localStorage.setItem('ai-mcp-processing-config', JSON.stringify(processingConfig));
+      
+      // Show saved confirmation briefly
+      setTimeout(() => {
+        saveStatus = 'saved';
+        setTimeout(() => {
+          saveStatus = '';
+        }, 2000);
+      }, 100);
+    }
+  }
+  
+  function applyTheme() {
+    if (browser) {
+      const isDark = uiConfig.theme === 'dark' || 
+                     (uiConfig.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      
+      console.log('Settings applyTheme:', { theme: uiConfig.theme, isDark, systemDark: window.matchMedia('(prefers-color-scheme: dark)').matches });
+      
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+        console.log('Settings: Dark mode applied');
+      } else {
+        document.documentElement.classList.remove('dark');
+        console.log('Settings: Light mode applied');
+      }
+      
+      // Update localStorage for header component
+      localStorage.setItem('darkMode', isDark.toString());
+    }
+  }
+  
+  // Reactive statement to apply theme when changed
+  $: if (browser && uiConfig.theme) {
+    applyTheme();
+    saveSettings();
+  }
+  
+  // Save settings when they change
+  $: if (browser && serverConfig) {
+    saveSettings();
+  }
+  
+  $: if (browser && processingConfig) {
+    saveSettings();
+  }
   
   async function checkServerConnection() {
     try {
@@ -115,7 +197,16 @@
         </div>
         <div>
           <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Settings</h1>
-          <p class="text-gray-600 dark:text-gray-400">Configure your AI MCP Toolkit experience</p>
+          <div class="flex items-center space-x-2">
+            <p class="text-gray-600 dark:text-gray-400">Configure your AI MCP Toolkit experience</p>
+            {#if saveStatus === 'saving'}
+              <span class="text-sm text-blue-600 dark:text-blue-400 animate-pulse">Saving...</span>
+            {:else if saveStatus === 'saved'}
+              <span class="flex items-center text-sm text-green-600 dark:text-green-400">
+                <CheckCircle size={14} class="mr-1" /> Saved
+              </span>
+            {/if}
+          </div>
         </div>
       </div>
       

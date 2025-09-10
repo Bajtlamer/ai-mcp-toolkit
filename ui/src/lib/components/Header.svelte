@@ -15,6 +15,14 @@
     darkMode = localStorage.getItem('darkMode') === 'true' || 
                (!localStorage.getItem('darkMode') && window.matchMedia('(prefers-color-scheme: dark)').matches);
     updateDarkMode();
+    
+    // Listen for storage changes from settings page
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'darkMode') {
+        darkMode = e.newValue === 'true';
+        updateDarkMode();
+      }
+    });
   }
   
   function toggleDarkMode() {
@@ -22,6 +30,11 @@
     updateDarkMode();
     if (browser) {
       localStorage.setItem('darkMode', darkMode.toString());
+      
+      // Also update the theme setting to match
+      const uiConfig = JSON.parse(localStorage.getItem('ai-mcp-ui-config') || '{}');
+      uiConfig.theme = darkMode ? 'dark' : 'light';
+      localStorage.setItem('ai-mcp-ui-config', JSON.stringify(uiConfig));
     }
   }
   
@@ -29,8 +42,10 @@
     if (browser) {
       if (darkMode) {
         document.documentElement.classList.add('dark');
+        console.log('Dark mode enabled - added dark class to html');
       } else {
         document.documentElement.classList.remove('dark');
+        console.log('Light mode enabled - removed dark class from html');
       }
     }
   }
