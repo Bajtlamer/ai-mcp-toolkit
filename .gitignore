@@ -218,6 +218,12 @@ secrets/
 *.backup
 *.old
 
+# SvelteKit build outputs (should NOT be versioned)
+.svelte-kit/
+ui/.svelte-kit/
+ui/build/
+ui/dist/
+
 # ============================================
 # WHAT IS VERSIONED (these are NOT ignored):
 # ============================================
