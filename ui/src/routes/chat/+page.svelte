@@ -358,9 +358,9 @@
                 <div class="w-2 h-2 {serverStatus.canChat ? 'bg-green-500' : 'bg-red-500'} rounded-full {serverStatus.canChat ? 'animate-pulse' : ''}"></div>
                 <span class="text-sm text-gray-500 dark:text-gray-400">
                   {#if serverStatus.mcp}
-                    MCP Server • Qwen2.5 14B
+                    MCP Server • {serverStatus.model?.name || 'Unknown Model'}
                   {:else if serverStatus.ollama}
-                    Direct Ollama • Qwen2.5 14B
+                    Direct Ollama • {serverStatus.model?.name || 'Unknown Model'}
                   {:else}
                     Disconnected
                   {/if}
@@ -408,7 +408,7 @@
                 <MessageSquare size={32} class="text-white" />
               </div>
               <h2 class="text-2xl font-semibold text-gray-900 dark:text-white mb-2">Start a conversation</h2>
-              <p class="text-gray-600 dark:text-gray-400 mb-6">Ask me anything! I'm powered by Qwen2.5 14B and can help with a wide variety of tasks.</p>
+              <p class="text-gray-600 dark:text-gray-400 mb-6">Ask me anything! I'm powered by {serverStatus.model?.name || 'AI'} and can help with a wide variety of tasks.</p>
               <div class="grid grid-cols-1 gap-2">
                 <button
                   on:click={() => inputText = 'Hello! What can you help me with today?'}
@@ -552,7 +552,7 @@
                 </div>
                 <div class="flex-1">
                   <div class="flex items-center space-x-2 mb-2">
-                    <span class="text-xs font-medium text-purple-600 dark:text-purple-400">Qwen2.5 14B</span>
+                      <span class="text-xs font-medium text-purple-600 dark:text-purple-400">{serverStatus.model?.name || 'AI Assistant'}</span>
                   </div>
                   <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 p-4 rounded-lg rounded-tl-sm shadow-sm">
                     <div class="flex items-center space-x-3">
@@ -602,7 +602,7 @@
           <textarea
             bind:value={inputText}
             on:keydown={handleKeyDown}
-            placeholder="Message Qwen2.5 14B..."
+            placeholder="Message {serverStatus.model?.name || 'AI'}..."
             class="w-full px-4 py-3 pr-12 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 transition-all"
             rows="1"
             style="min-height: 52px; max-height: 120px;"

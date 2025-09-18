@@ -34,7 +34,7 @@ export class ChatAPI {
             }
           ],
           stream: false,
-          model: 'qwen2.5:14b', // Use the configured model
+          model: await this.getActiveModel(), // Use the currently loaded model
           temperature: 0.7,
           max_tokens: 2000
         }),
@@ -101,7 +101,7 @@ export class ChatAPI {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'qwen2.5:14b',
+        model: await this.getActiveModel(),
         prompt: promptWithContext,
         stream: false,
         options: {
@@ -279,7 +279,7 @@ export class ChatAPI {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'qwen2.5:14b',
+          model: await this.getActiveModel(),
           prompt: promptWithContext,
           stream: true,
           options: {
@@ -361,16 +361,84 @@ export class ChatAPI {
   }
 
   /**
+   * Get the currently active/loaded model from Ollama
+   */
+  async getActiveModel() {
+    try {
+      const response = await fetch('http://localhost:11434/api/ps', {
+        method: 'GET',
+        signal: AbortSignal.timeout(5000),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        // Return the first loaded model, or fall back to a default
+        if (data.models && data.models.length > 0) {
+          return data.models[0].name;
+        }
+      }
+    } catch (error) {
+      console.warn('Could not get active model, using default:', error);
+    }
+    
+    // Fallback to qwen2.5:7b if we can't detect the active model
+    return 'qwen2.5:7b';
+  }
+
+  /**
+   * Get information about the currently active model
+   */
+  async getActiveModelInfo() {
+    try {
+      const response = await fetch('http://localhost:11434/api/ps', {
+        method: 'GET',
+        signal: AbortSignal.timeout(5000),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.models && data.models.length > 0) {
+          const model = data.models[0];
+          return {
+            name: model.name,
+            size: model.size,
+            processor: model.processor || 'Unknown',
+            context: model.context || 0,
+            id: model.name // For display purposes
+          };
+        }
+      }
+    } catch (error) {
+      console.warn('Could not get active model info:', error);
+    }
+    
+    return {
+      name: 'qwen2.5:7b',
+      size: 'Unknown',
+      processor: 'Unknown',
+      context: 4096,
+      id: 'qwen2.5:7b'
+    };
+  }
+
+  /**
    * Get server status information
    */
   async getServerStatus() {
     const mcpAvailable = await this.isServerAvailable();
     const ollamaAvailable = await this.isOllamaAvailable();
     
+    // Get active model info if Ollama is available
+    let modelInfo = null;
+    if (ollamaAvailable) {
+      modelInfo = await this.getActiveModelInfo();
+    }
+    
     return {
       mcp: mcpAvailable,
       ollama: ollamaAvailable,
-      canChat: mcpAvailable || ollamaAvailable
+      canChat: mcpAvailable || ollamaAvailable,
+      model: modelInfo
     };
   }
 
