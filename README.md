@@ -245,6 +245,7 @@ AI MCP Toolkit
 
 - [Configuration Guide](docs/CONFIGURATION.md) - Complete configuration documentation
 - [API Reference](http://localhost:8000/docs) - Interactive API documentation
+- [Model Management](#-model-management) - AI model switching and monitoring
 - [Contributing Guidelines](CONTRIBUTING.md) - How to contribute to the project
 - [License](LICENSE) - MIT License terms
 
@@ -335,6 +336,300 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Model Context Protocol](https://modelcontextprotocol.io/) for the standard
 - [Ollama](https://ollama.ai/) for local AI model support
 - The open-source AI community
+
+## 🤖 Model Management
+
+The AI MCP Toolkit provides comprehensive model management capabilities, allowing you to easily switch between different AI models and monitor their status in real-time.
+
+### 📋 Getting Current Model Information
+
+#### Check Currently Active Model
+```bash
+# Check what models are currently running
+ollama ps
+
+# Get model via the toolkit's API
+curl -s http://localhost:5173/api/gpu/health | jq -r '.ollama_model'
+
+# List all available models
+ollama list
+
+# Using the model management script
+cd /home/roza/ai-mcp-toolkit
+./switch-model.sh
+```
+
+#### Example Output
+```bash
+$ ollama ps
+NAME           ID              SIZE     PROCESSOR          CONTEXT    UNTIL              
+qwen2.5:14b    7cdf5a0187d5    10 GB    31%/69% CPU/GPU    4096       4 minutes from now
+
+$ curl -s http://localhost:5173/api/gpu/health | jq -r '.ollama_model'
+qwen2.5:14b
+```
+
+### 🔄 Switching Models
+
+#### Method 1: Using the Model Management Script (Recommended)
+The toolkit includes a convenient script for easy model switching:
+
+```bash
+cd /home/roza/ai-mcp-toolkit
+
+# View current status and available models
+./switch-model.sh
+
+# Switch to a specific model
+./switch-model.sh qwen2.5:7b     # Switch to Qwen 2.5 7B
+./switch-model.sh qwen2.5:14b    # Switch to Qwen 2.5 14B
+./switch-model.sh llama3.1:8b    # Switch to Llama 3.1 8B
+./switch-model.sh llama3.2:3b    # Switch to Llama 3.2 3B
+```
+
+#### Method 2: Manual Command Line
+```bash
+# Stop current model
+ollama stop qwen2.5:14b
+
+# Start new model
+echo "Hello" | ollama run qwen2.5:7b > /dev/null 2>&1 &
+
+# Verify the switch
+ollama ps
+```
+
+#### Method 3: Web Interface
+1. Navigate to the Settings page: http://localhost:5173/settings
+2. Find the "AI Model Management" section
+3. Click on any available model to switch to it
+4. Monitor the switch status with real-time feedback
+
+### 🌐 Model Management API
+
+The toolkit provides RESTful API endpoints for programmatic model management:
+
+#### List Available Models
+```bash
+GET /api/models/switch
+```
+
+**Example Request:**
+```bash
+curl -s http://localhost:5173/api/models/switch | jq
+```
+
+**Example Response:**
+```json
+{
+  "success": true,
+  "available": [
+    {
+      "name": "qwen2.5:7b",
+      "id": "845dbda0ea48",
+      "size": "4.7",
+      "modified": "GB 2 hours ago"
+    },
+    {
+      "name": "qwen2.5:14b",
+      "id": "7cdf5a0187d5",
+      "size": "9.0",
+      "modified": "GB 2 hours ago"
+    },
+    {
+      "name": "llama3.1:8b",
+      "id": "46e0c10c039e",
+      "size": "4.9",
+      "modified": "GB 25 hours ago"
+    }
+  ],
+  "current": "qwen2.5:14b"
+}
+```
+
+#### Switch Model
+```bash
+POST /api/models/switch
+Content-Type: application/json
+```
+
+**Example Request:**
+```bash
+curl -X POST http://localhost:5173/api/models/switch \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen2.5:7b"}'
+```
+
+**Success Response:**
+```json
+{
+  "success": true,
+  "message": "Successfully switched to model: qwen2.5:7b",
+  "model": "qwen2.5:7b"
+}
+```
+
+**Error Response:**
+```json
+{
+  "success": false,
+  "error": "Model 'invalid-model' not found. Available models: qwen2.5:7b, qwen2.5:14b, llama3.1:8b"
+}
+```
+
+#### Get GPU/Model Health Status
+```bash
+GET /api/gpu/health
+```
+
+**Example Request:**
+```bash
+curl -s http://localhost:5173/api/gpu/health | jq
+```
+
+**Example Response:**
+```json
+{
+  "gpu_name": "NVIDIA GeForce RTX 3070 Ti",
+  "gpu_utilization": 45,
+  "gpu_memory_used": 8192,
+  "gpu_memory_total": 8192,
+  "gpu_temperature": 65,
+  "ollama_model": "qwen2.5:14b",
+  "ollama_gpu_accelerated": true,
+  "system_load": 2.1,
+  "inference_speed": 12.5
+}
+```
+
+### 📊 GPU Metrics API
+
+Monitor real-time GPU performance and model metrics:
+
+#### Get Current GPU Metrics
+```bash
+GET /api/gpu/metrics
+```
+
+**Example Request:**
+```bash
+curl -s http://localhost:5173/api/gpu/metrics | jq
+```
+
+**Example Response:**
+```json
+{
+  "timestamp": "2025-01-18T15:59:27.123Z",
+  "gpu_utilization": 65,
+  "gpu_memory_used": 7340,
+  "gpu_memory_total": 8192,
+  "gpu_temperature": 68,
+  "power_usage": 180,
+  "inference_speed": 15.2,
+  "tokens_per_second": 25.8
+}
+```
+
+### 🖥️ Real-Time Model Status
+
+The toolkit automatically detects model changes and updates the UI in real-time:
+
+- **GPU Monitoring Page**: Shows current model with live metrics
+- **Chat Interface**: Displays active model in header and message labels
+- **Settings Page**: Model management interface with status indicators
+- **API Endpoints**: Always return current system state
+
+### 📝 Model Management Script Features
+
+The included `switch-model.sh` script provides:
+
+- ✅ **Current Status Display**: Shows running models and app detection
+- ✅ **Available Models List**: Lists all downloaded models with sizes
+- ✅ **Automatic Validation**: Verifies model exists before switching
+- ✅ **Progress Feedback**: Shows switching progress and completion status
+- ✅ **Error Handling**: Provides clear error messages and suggestions
+- ✅ **Usage Examples**: Built-in help with command examples
+
+#### Script Usage Examples
+```bash
+# Make script executable (first time only)
+chmod +x /home/roza/ai-mcp-toolkit/switch-model.sh
+
+# Show current status and help
+./switch-model.sh
+
+# Switch to different models
+./switch-model.sh qwen2.5:7b
+./switch-model.sh llama3.1:8b
+./switch-model.sh llama3.2:3b
+```
+
+### 🔧 Troubleshooting Model Management
+
+#### Model Won't Switch
+```bash
+# Check if Ollama is running
+sudo systemctl status ollama
+
+# Restart Ollama service
+sudo systemctl restart ollama
+
+# Check model availability
+ollama list
+
+# Force stop all models
+ollama ps | grep -v "NAME" | awk '{print $1}' | xargs -I {} ollama stop {}
+```
+
+#### Model Not Appearing in UI
+```bash
+# Refresh the browser page
+# Or check browser console for errors
+
+# Verify API endpoints
+curl -s http://localhost:5173/api/gpu/health
+curl -s http://localhost:5173/api/models/switch
+```
+
+#### Performance Issues
+```bash
+# Check GPU memory usage
+nvidia-smi
+
+# Monitor system resources
+htop
+
+# Check model size vs available memory
+ollama list
+```
+
+### 📚 API Quick Reference
+
+| Endpoint | Method | Description | Example |
+|----------|---------|-------------|---------|
+| `/api/gpu/health` | GET | Get current GPU and model status | `curl -s http://localhost:5173/api/gpu/health` |
+| `/api/gpu/metrics` | GET | Get real-time GPU performance metrics | `curl -s http://localhost:5173/api/gpu/metrics` |
+| `/api/models/switch` | GET | List all available models and current model | `curl -s http://localhost:5173/api/models/switch` |
+| `/api/models/switch` | POST | Switch to a different model | `curl -X POST http://localhost:5173/api/models/switch -d '{"model":"qwen2.5:7b"}'` |
+
+### 💴 Model Management Commands Cheat Sheet
+
+```bash
+# Quick Status Check
+ollama ps                                    # Show running models
+curl -s localhost:5173/api/gpu/health | jq  # Get model via API
+./switch-model.sh                           # Show status with script
+
+# Model Switching
+./switch-model.sh qwen2.5:7b                # Switch using script (recommended)
+ollama stop current_model && ollama run new_model  # Manual switch
+curl -X POST localhost:5173/api/models/switch -d '{"model":"qwen2.5:7b"}'  # API switch
+
+# Monitoring
+watch -n 2 ollama ps                         # Monitor model status
+watch -n 5 "curl -s localhost:5173/api/gpu/metrics | jq"  # Monitor GPU metrics
+nvidia-smi -l 5                             # Monitor GPU usage
+```
 
 ## 📞 Support
 

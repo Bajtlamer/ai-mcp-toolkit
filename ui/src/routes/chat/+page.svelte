@@ -445,7 +445,7 @@
                   <div class="{message.type === 'user' ? 'max-w-2xl' : 'w-full'}">
                     <div class="flex items-center space-x-2 mb-2 {message.type === 'user' ? 'justify-end' : ''}">
                       <span class="text-xs font-medium {message.type === 'user' ? 'text-blue-600 dark:text-blue-400' : 'text-purple-600 dark:text-purple-400'}">
-                        {message.type === 'user' ? 'You' : 'Qwen2.5 14B'}
+                        {message.type === 'user' ? 'You' : (serverStatus.model?.name || 'AI Assistant')}
                       </span>
                       <div class="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
                         <span>

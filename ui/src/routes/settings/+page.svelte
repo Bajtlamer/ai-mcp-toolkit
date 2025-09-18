@@ -2,6 +2,7 @@
   import { Settings, Server, Palette, Globe, Shield, Download, RefreshCw, CheckCircle } from 'lucide-svelte';
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
+  import ModelSwitcher from '$lib/components/ModelSwitcher.svelte';
 
   let serverConfig = {
     host: 'localhost',
@@ -318,6 +319,21 @@
           </button>
         </div>
       </div>
+    </div>
+
+    <!-- Model Management -->
+    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
+      <div class="flex items-center space-x-3 mb-6">
+        <div class="w-8 h-8 bg-green-100 dark:bg-green-900 rounded-lg flex items-center justify-center">
+          <Server size={18} class="text-green-600 dark:text-green-400" />
+        </div>
+        <div>
+          <h2 class="text-xl font-semibold text-gray-900 dark:text-white">AI Model Management</h2>
+          <p class="text-sm text-gray-500 dark:text-gray-400">Switch between available AI models</p>
+        </div>
+      </div>
+
+      <ModelSwitcher on:modelChanged={(e) => console.log('Model changed to:', e.detail.model)} />
     </div>
 
     <!-- UI Preferences -->

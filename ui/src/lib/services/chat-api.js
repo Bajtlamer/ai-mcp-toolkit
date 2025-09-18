@@ -361,9 +361,28 @@ export class ChatAPI {
   }
 
   /**
-   * Get the currently active/loaded model from Ollama
+   * Get the currently active/loaded model from GPU health API
    */
   async getActiveModel() {
+    try {
+      // Try to get model from our GPU health API first
+      const url = typeof window !== 'undefined' ? '/api/gpu/health' : 'http://localhost:5173/api/gpu/health';
+      const response = await fetch(url, {
+        method: 'GET',
+        signal: AbortSignal.timeout(5000),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.ollama_model) {
+          return data.ollama_model;
+        }
+      }
+    } catch (error) {
+      console.warn('Could not get model from GPU health API, trying Ollama directly:', error);
+    }
+    
+    // Fallback to direct Ollama API
     try {
       const response = await fetch('http://localhost:11434/api/ps', {
         method: 'GET',
@@ -378,17 +397,42 @@ export class ChatAPI {
         }
       }
     } catch (error) {
-      console.warn('Could not get active model, using default:', error);
+      console.warn('Could not get active model from Ollama, using default:', error);
     }
     
-    // Fallback to qwen2.5:7b if we can't detect the active model
-    return 'qwen2.5:7b';
+    // Final fallback
+    return 'qwen2.5:14b';
   }
 
   /**
    * Get information about the currently active model
    */
   async getActiveModelInfo() {
+    try {
+      // Try to get model info from our GPU health API first
+      const url = typeof window !== 'undefined' ? '/api/gpu/health' : 'http://localhost:5173/api/gpu/health';
+      const response = await fetch(url, {
+        method: 'GET',
+        signal: AbortSignal.timeout(5000),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.ollama_model) {
+          return {
+            name: data.ollama_model,
+            size: 'Unknown',
+            processor: data.ollama_gpu_accelerated ? 'GPU' : 'CPU',
+            context: 4096,
+            id: data.ollama_model
+          };
+        }
+      }
+    } catch (error) {
+      console.warn('Could not get model info from GPU health API, trying Ollama directly:', error);
+    }
+    
+    // Fallback to direct Ollama API
     try {
       const response = await fetch('http://localhost:11434/api/ps', {
         method: 'GET',
@@ -409,15 +453,15 @@ export class ChatAPI {
         }
       }
     } catch (error) {
-      console.warn('Could not get active model info:', error);
+      console.warn('Could not get active model info from Ollama:', error);
     }
     
     return {
-      name: 'qwen2.5:7b',
+      name: 'qwen2.5:14b',
       size: 'Unknown',
       processor: 'Unknown',
       context: 4096,
-      id: 'qwen2.5:7b'
+      id: 'qwen2.5:14b'
     };
   }
 
