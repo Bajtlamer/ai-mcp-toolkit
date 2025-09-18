@@ -7,12 +7,13 @@
   let isProcessing = false;
   let error = null;
 
-  // Example texts for demonstration
+  // Example texts for demonstration - showing the problematic symbols it will remove
   const examples = [
-    "Hello!!! This is some messy text... with lots of!!!!! special characters???? And   weird   spacing.",
-    "Check out this text with <b>HTML tags</b> and &amp; entities!",
-    "Text with\tmultiple\n\nline breaks\tand tabs.",
-    "Mixed\u00A0spacing\u2009and\u2002unicode\u200Bspaces."
+    "Hello@world! This text has $$$ and &*@#% symbols that need cleaning!!!",
+    "Check email@test.com and https://website.com with []()^*&% characters.",
+    "Text with @!%^&*()_+}{:?<> exactly these problematic symbols.",
+    "Mixed text with HTML <b>tags</b> and &amp; entities plus @@@ symbols.",
+    "Corporate email: john.doe@company.com with (555) 123-4567 and weird **** symbols."
   ];
 
   async function cleanText() {
@@ -82,7 +83,7 @@
       </div>
       <div>
         <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Text Cleaner</h1>
-        <p class="text-gray-600 dark:text-gray-400">Clean and normalize text by removing special characters and formatting</p>
+        <p class="text-gray-600 dark:text-gray-400">Remove unnecessary symbols like @!%^&*()_+&#123;&#125; and clean up messy text</p>
       </div>
     </div>
   </div>
@@ -179,21 +180,21 @@
     <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-6">Features</h2>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
       <div class="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
-        <h3 class="font-medium text-gray-900 dark:text-white mb-2">Special Character Removal</h3>
+        <h3 class="font-medium text-gray-900 dark:text-white mb-2">Special Symbol Removal</h3>
         <p class="text-sm text-gray-600 dark:text-gray-400">
-          Removes excessive punctuation, special symbols, and normalizes spacing.
+          Automatically removes problematic symbols: @!%^&*()_+&#123;&#125; while preserving readability.
         </p>
       </div>
       <div class="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
-        <h3 class="font-medium text-gray-900 dark:text-white mb-2">HTML Tag Removal</h3>
+        <h3 class="font-medium text-gray-900 dark:text-white mb-2">URL & Email Cleaning</h3>
         <p class="text-sm text-gray-600 dark:text-gray-400">
-          Strips HTML tags and decodes HTML entities for clean plain text.
+          Removes URLs, email addresses, and HTML tags by default for cleaner text.
         </p>
       </div>
       <div class="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
-        <h3 class="font-medium text-gray-900 dark:text-white mb-2">Unicode Normalization</h3>
+        <h3 class="font-medium text-gray-900 dark:text-white mb-2">Smart Text Normalization</h3>
         <p class="text-sm text-gray-600 dark:text-gray-400">
-          Normalizes Unicode characters and removes invisible/control characters.
+          Normalizes spacing, removes excessive punctuation, and preserves readability.
         </p>
       </div>
     </div>

@@ -1,5 +1,6 @@
 <script>
   import { page } from '$app/stores';
+  import { goto } from '$app/navigation';
   import { createEventDispatcher } from 'svelte';
   import { 
     Home, 
@@ -15,15 +16,21 @@
     Type,
     Zap,
     BarChart3,
-    X
+    X,
+    Cpu,
+    Activity
   } from 'lucide-svelte';
   
   const dispatch = createEventDispatcher();
   
   export let open = false;
   
+  // Simple boolean for AI Agents menu expansion
+  let aiAgentsExpanded = false;
+  
   const navigation = [
     { name: 'Dashboard', href: '/', icon: Home },
+    { name: 'GPU Monitor', href: '/gpu', icon: Cpu },
     { name: 'AI Chat', href: '/chat', icon: MessageSquare },
     {
       name: 'AI Agents',
@@ -72,6 +79,18 @@
       }, 100);
     }
   }
+  
+  // Toggle function for AI Agents menu
+  function toggleAiAgents() {
+    // Navigate to agents page
+    goto('/agents');
+    
+    // Toggle the expansion
+    aiAgentsExpanded = !aiAgentsExpanded;
+    
+    // Handle sidebar closing on mobile
+    handleNavigation();
+  }
 </script>
 
 <!-- Mobile overlay -->
@@ -114,28 +133,69 @@
     <nav class="flex-1 px-2 py-4 space-y-1 overflow-y-auto scrollbar-thin">
       {#each navigation as item}
         <div>
-          <a
-            href={item.href}
-            on:click={handleNavigation}
-            class={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${
-              (currentPath === item.href) || (currentPath !== '/' && currentPath.startsWith(item.href)) || isChildActive(item.children)
-                ? 'bg-primary-50 text-primary-700 dark:bg-primary-900 dark:text-primary-200'
-                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
-            }`}
-          >
-            <svelte:component 
-              this={item.icon} 
-              size={18} 
-              class={`mr-3 flex-shrink-0 ${
+          {#if item.children}
+            <!-- Parent item with children - clickable to expand/collapse -->
+            <button
+              on:click={toggleAiAgents}
+              class={`group flex items-center justify-between w-full px-2 py-2 text-sm font-medium rounded-md transition-colors ${
                 (currentPath === item.href) || (currentPath !== '/' && currentPath.startsWith(item.href)) || isChildActive(item.children)
-                  ? 'text-primary-500'
-                  : 'text-gray-400 group-hover:text-gray-500 dark:group-hover:text-gray-300'
-              }`} 
-            />
-            {item.name}
-          </a>
+                  ? 'bg-primary-50 text-primary-700 dark:bg-primary-900 dark:text-primary-200'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+              }`}
+            >
+              <div class="flex items-center">
+                <svelte:component 
+                  this={item.icon} 
+                  size={18} 
+                  class={`mr-3 flex-shrink-0 ${
+                    (currentPath === item.href) || (currentPath !== '/' && currentPath.startsWith(item.href)) || isChildActive(item.children)
+                      ? 'text-primary-500'
+                      : 'text-gray-400 group-hover:text-gray-500 dark:group-hover:text-gray-300'
+                  }`} 
+                />
+                {item.name}
+              </div>
+              <!-- Expand/Collapse indicator -->
+              <svg 
+                class={`w-4 h-4 transition-transform duration-200 ${
+                  aiAgentsExpanded ? 'rotate-90' : ''
+                }
+                  (currentPath === item.href) || (currentPath !== '/' && currentPath.startsWith(item.href)) || isChildActive(item.children)
+                    ? 'text-primary-500'
+                    : 'text-gray-400 group-hover:text-gray-500 dark:group-hover:text-gray-300'
+                }`}
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          {:else}
+            <!-- Regular navigation item without children -->
+            <a
+              href={item.href}
+              on:click={handleNavigation}
+              class={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${
+                (currentPath === item.href) || (currentPath !== '/' && currentPath.startsWith(item.href)) || isChildActive(item.children)
+                  ? 'bg-primary-50 text-primary-700 dark:bg-primary-900 dark:text-primary-200'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+              }`}
+            >
+              <svelte:component 
+                this={item.icon} 
+                size={18} 
+                class={`mr-3 flex-shrink-0 ${
+                  (currentPath === item.href) || (currentPath !== '/' && currentPath.startsWith(item.href)) || isChildActive(item.children)
+                    ? 'text-primary-500'
+                    : 'text-gray-400 group-hover:text-gray-500 dark:group-hover:text-gray-300'
+                }`} 
+              />
+              {item.name}
+            </a>
+          {/if}
           
-          {#if item.children && (isActive(item.href) || isChildActive(item.children))}
+          {#if item.children && aiAgentsExpanded}
             <div class="ml-6 mt-1 space-y-1">
               {#each item.children as child}
                 <a

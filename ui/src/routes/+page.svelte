@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { 
+  import {
     Bot, 
     Zap, 
     Shield, 
@@ -14,6 +14,8 @@
     Type,
     BarChart3
   } from 'lucide-svelte';
+  
+  import GPUStatus from '$lib/components/GPUStatus.svelte';
   
   let serverStats = null;
   let recentActivity = [];
@@ -190,6 +192,17 @@
       </div>
     </div>
   {/if}
+  
+  <!-- GPU Status Section -->
+  <div class="space-y-6">
+    <div>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+        <Activity class="mr-2 text-primary-500" size={20} />
+        GPU Performance
+      </h2>
+      <GPUStatus compact={true} />
+    </div>
+  </div>
   
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- AI Agents Grid -->

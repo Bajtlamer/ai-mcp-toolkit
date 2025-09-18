@@ -25,6 +25,7 @@ from ..agents.sentiment_analyzer import SentimentAnalyzerAgent
 from ..agents.text_anonymizer import TextAnonymizerAgent
 from ..utils.config import Config
 from ..utils.logger import get_logger
+from ..utils.gpu_monitor import get_gpu_monitor
 
 logger = get_logger(__name__)
 
@@ -52,6 +53,9 @@ class MCPServer:
         
         # Register handlers
         self._register_handlers()
+        
+        # Initialize GPU monitoring
+        self.gpu_monitor = get_gpu_monitor()
         
         # Initialize and register agents
         self._initialize_agents()
@@ -203,18 +207,28 @@ class MCPServer:
             raise
 
     async def start(self, host: str = "localhost", port: int = 8000) -> None:
-        """Start the MCP server."""
+        """Start the MCP server with GPU monitoring."""
         try:
             self.logger.info(f"Starting MCP server on {host}:{port}")
+            
+            # Start GPU monitoring
+            await self.gpu_monitor.start_monitoring(interval=10.0)  # Monitor every 10 seconds
+            self.logger.info("GPU monitoring started")
+            
             await self.server.run(host=host, port=port)
         except Exception as e:
             self.logger.error(f"Error starting server: {e}", exc_info=True)
             raise
 
     async def stop(self) -> None:
-        """Stop the MCP server."""
+        """Stop the MCP server and GPU monitoring."""
         try:
             self.logger.info("Stopping MCP server")
+            
+            # Stop GPU monitoring
+            await self.gpu_monitor.stop_monitoring()
+            self.logger.info("GPU monitoring stopped")
+            
             await self.server.close()
         except Exception as e:
             self.logger.error(f"Error stopping server: {e}", exc_info=True)
@@ -228,8 +242,11 @@ class MCPServer:
         return list(self.agents.keys())
 
     def get_server_stats(self) -> Dict[str, Any]:
-        """Get server statistics and status."""
+        """Get server statistics and status including GPU metrics."""
         total_tools = sum(len(info.tools) for info in self.agents.values())
+        
+        # Get GPU performance summary
+        gpu_summary = self.gpu_monitor.get_performance_summary()
         
         return {
             "agents_count": len(self.agents),
@@ -246,7 +263,11 @@ class MCPServer:
                 "log_level": self.config.log_level,
                 "ollama_host": self.config.ollama_host,
                 "ollama_port": self.config.ollama_port,
-            }
+                "ollama_model": self.config.ollama_model,
+                "max_tokens": self.config.max_tokens,
+                "temperature": self.config.temperature
+            },
+            "gpu_performance": gpu_summary
         }
 
 

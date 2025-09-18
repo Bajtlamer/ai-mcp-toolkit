@@ -78,6 +78,30 @@ class TextCleanerAgent(BaseAgent):
                 }
             ),
             Tool(
+                name="remove_special_symbols",
+                description="Remove specific special symbols and characters while preserving text readability",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "text": {
+                            "type": "string",
+                            "description": "The text to clean of special symbols"
+                        },
+                        "symbols_to_remove": {
+                            "type": "string",
+                            "description": "Custom symbols to remove (default: @!%^&*()_+}{:\"?<>}{}",
+                            "default": "@!%^&*()_+}{:\"?<>}{}"
+                        },
+                        "preserve_basic_punctuation": {
+                            "type": "boolean",
+                            "description": "Whether to preserve basic punctuation like periods, commas, apostrophes",
+                            "default": True
+                        }
+                    },
+                    "required": ["text"]
+                }
+            ),
+            Tool(
                 name="remove_html_tags",
                 description="Remove HTML tags from text",
                 inputSchema={
@@ -105,6 +129,8 @@ class TextCleanerAgent(BaseAgent):
         try:
             if tool_name == "clean_text":
                 result = await self._clean_text(arguments)
+            elif tool_name == "remove_special_symbols":
+                result = await self._remove_special_symbols(arguments)
             elif tool_name == "normalize_unicode":
                 result = await self._normalize_unicode(arguments)
             elif tool_name == "remove_html_tags":
@@ -121,43 +147,81 @@ class TextCleanerAgent(BaseAgent):
             raise
 
     async def _clean_text(self, arguments: Dict[str, Any]) -> str:
-        """Clean and normalize text."""
+        """Clean and normalize text with improved defaults for better symbol removal."""
         text = self.validate_text_input(arguments["text"])
         
-        # Extract options
+        # NEW: Improved defaults for better cleaning behavior
+        # If no specific options are provided, we now default to removing common problematic symbols
         remove_numbers = arguments.get("remove_numbers", False)
         remove_punctuation = arguments.get("remove_punctuation", False)
         normalize_whitespace = arguments.get("normalize_whitespace", True)
         to_lowercase = arguments.get("to_lowercase", False)
-        remove_urls = arguments.get("remove_urls", False)
-        remove_emails = arguments.get("remove_emails", False)
+        remove_urls = arguments.get("remove_urls", True)  # Changed default to True
+        remove_emails = arguments.get("remove_emails", True)  # Changed default to True
         
-        # Apply cleaning operations
+        # Apply cleaning operations in order
         if remove_urls:
             # Remove URLs
             url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
-            text = re.sub(url_pattern, '', text)
+            text = re.sub(url_pattern, ' ', text)
         
         if remove_emails:
             # Remove email addresses
             email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-            text = re.sub(email_pattern, '', text)
+            text = re.sub(email_pattern, ' ', text)
         
         if remove_numbers:
             # Remove all numbers
             text = re.sub(r'\d+', '', text)
         
         if remove_punctuation:
-            # Remove punctuation (keep basic sentence structure)
+            # Remove all punctuation except letters, numbers, and spaces
             text = re.sub(r'[^\w\s]', '', text)
+        else:
+            # NEW: Even if not removing ALL punctuation, remove problematic symbols by default
+            # This addresses your specific request to remove @!%^&*()_+}{:"?<>}{}
+            problematic_symbols = r'[@!%^&*()_+}{:"?<>}{}\\/\[\]#$~`|;=]'
+            text = re.sub(problematic_symbols, '', text)
+            
+            # Clean up repeated punctuation marks
+            text = re.sub(r'[.!?]{3,}', '...', text)  # 4+ punctuation -> ...
+            text = re.sub(r'[.!?]{2}', '.', text)     # 2 punctuation -> .
+            text = re.sub(r'[,]{2,}', ',', text)      # Multiple commas -> single comma
         
         if normalize_whitespace:
-            # Normalize whitespace
+            # Normalize whitespace (including tabs, newlines, multiple spaces)
             text = re.sub(r'\s+', ' ', text)
             text = text.strip()
         
         if to_lowercase:
             text = text.lower()
+        
+        return text
+
+    async def _remove_special_symbols(self, arguments: Dict[str, Any]) -> str:
+        """Remove specific special symbols while preserving readability."""
+        text = self.validate_text_input(arguments["text"])
+        
+        # Get symbols to remove (default targets the exact symbols you mentioned)
+        symbols_to_remove = arguments.get("symbols_to_remove", "@!%^&*()_+}{:\"?<>}{}")  
+        preserve_basic_punctuation = arguments.get("preserve_basic_punctuation", True)
+        
+        # Escape special regex characters in the symbols string
+        escaped_symbols = re.escape(symbols_to_remove)
+        
+        if preserve_basic_punctuation:
+            # Remove only the specified symbols, keep . , ? ! ' -
+            pattern = f"[{escaped_symbols}]"
+        else:
+            # Remove specified symbols plus all punctuation except letters, numbers, spaces
+            pattern = f"[{escaped_symbols}\\s]*|[^\\w\\s]"
+        
+        # Remove the symbols
+        text = re.sub(pattern, '', text)
+        
+        # Clean up extra whitespace that might result from symbol removal
+        text = re.sub(r'\s+', ' ', text)
+        text = text.strip()
         
         return text
 

@@ -23,7 +23,7 @@ class Config:
     # Ollama configuration
     ollama_host: str = field(default_factory=lambda: os.getenv("OLLAMA_HOST", "localhost"))
     ollama_port: int = field(default_factory=lambda: int(os.getenv("OLLAMA_PORT", "11434")))
-    ollama_model: str = field(default_factory=lambda: os.getenv("OLLAMA_MODEL", "llama3.2:3b"))
+    ollama_model: str = field(default_factory=lambda: os.getenv("OLLAMA_MODEL", "qwen2.5:14b"))
     
     # UI configuration
     ui_host: str = field(default_factory=lambda: os.getenv("UI_HOST", "localhost"))

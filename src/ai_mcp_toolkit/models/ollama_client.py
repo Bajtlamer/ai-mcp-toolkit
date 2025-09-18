@@ -9,6 +9,7 @@ import time
 
 from ..utils.config import Config
 from ..utils.logger import get_logger
+from ..utils.gpu_monitor import get_gpu_monitor
 
 
 @dataclass
@@ -142,7 +143,8 @@ class OllamaClient:
         max_tokens: Optional[int] = None,
         stream: bool = False
     ) -> CompletionResponse:
-        """Generate text completion."""
+        """Generate text completion with GPU performance monitoring."""
+        start_time = time.time()
         await self._ensure_session()
         
         model_name = model or self.model
@@ -179,6 +181,13 @@ class OllamaClient:
                                 full_response += data["response"]
                             
                             if data.get("done", False):
+                                # Record performance metrics
+                                duration = time.time() - start_time
+                                eval_count = data.get("eval_count", 0)
+                                if eval_count > 0:
+                                    gpu_monitor = get_gpu_monitor()
+                                    gpu_monitor.record_inference_performance(eval_count, duration)
+                                
                                 return CompletionResponse(
                                     response=full_response,
                                     done=True,
@@ -191,6 +200,14 @@ class OllamaClient:
                 else:
                     # Handle single response
                     data = await response.json()
+                    
+                    # Record performance metrics
+                    duration = time.time() - start_time
+                    eval_count = data.get("eval_count", 0)
+                    if eval_count > 0:
+                        gpu_monitor = get_gpu_monitor()
+                        gpu_monitor.record_inference_performance(eval_count, duration)
+                    
                     return CompletionResponse(
                         response=data["response"],
                         done=data.get("done", True),
@@ -213,7 +230,8 @@ class OllamaClient:
         max_tokens: Optional[int] = None,
         stream: bool = False
     ) -> CompletionResponse:
-        """Generate chat completion."""
+        """Generate chat completion with GPU performance monitoring."""
+        start_time = time.time()
         await self._ensure_session()
         
         model_name = model or self.model
