@@ -25,8 +25,18 @@
   
   export let open = false;
   
-  // Simple boolean for AI Agents menu expansion
   let aiAgentsExpanded = false;
+  
+  // Get normalized current path
+  $: normalizedPath = currentPath.endsWith('/') && currentPath !== '/' 
+    ? currentPath.slice(0, -1) 
+    : currentPath;
+  
+  // Reactive statements to handle menu state
+  $: {
+    // Update menu expansion state whenever the path changes
+    aiAgentsExpanded = normalizedPath.startsWith('/agents');
+  }
   
   const navigation = [
     { name: 'Dashboard', href: '/', icon: Home },
@@ -60,16 +70,26 @@
   
   $: currentPath = $page.url.pathname;
   
-  function isActive(href) {
-    if (href === '/') {
-      return currentPath === '/';
+  // Strict active match for top-level nav items.
+  // - For '/', only '/' is active.
+  // - For other top-level hrefs, active only if exactly equal.
+  $: isActive = (href) => {
+    // Normalize the href for comparison
+    const normalizedHref = href.endsWith('/') && href !== '/' ? href.slice(0, -1) : href;
+    if (normalizedHref === '/') {
+      return normalizedPath === '/';
     }
-    return currentPath === href || (href !== '/' && currentPath.startsWith(href + '/'));
-  }
+    return normalizedPath === normalizedHref;
+  };
   
-  function isChildActive(children) {
-    return children?.some(child => isActive(child.href));
-  }
+  // Children are active if any child path matches exactly or is a descendant.
+  $: isChildActive = (children) => {
+    return children?.some((child) => {
+      const normalizedChildHref = child.href.endsWith('/') ? child.href.slice(0, -1) : child.href;
+      return normalizedPath === normalizedChildHref || 
+             normalizedPath.startsWith(normalizedChildHref + '/');
+    });
+  };
   
   // Close sidebar on navigation (for mobile)
   function handleNavigation() {
@@ -81,13 +101,9 @@
   }
   
   // Toggle function for AI Agents menu
-  function toggleAiAgents() {
-    // Navigate to agents page
-    goto('/agents');
-    
-    // Toggle the expansion
-    aiAgentsExpanded = !aiAgentsExpanded;
-    
+  async function toggleAiAgents() {
+    const target = normalizedPath.startsWith('/agents') ? '/' : '/agents';
+    await goto(target, { keepfocus: true, noscroll: true });
     // Handle sidebar closing on mobile
     handleNavigation();
   }
@@ -175,7 +191,7 @@
             <!-- Regular navigation item without children -->
             <a
               href={item.href}
-              on:click={handleNavigation}
+              on:click|preventDefault={() => { goto(item.href, { keepfocus: true, noscroll: true }); handleNavigation(); }}
               class={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${
                 isActive(item.href)
                   ? 'bg-primary-50 text-primary-700 dark:bg-primary-900 dark:text-primary-200'
@@ -195,14 +211,15 @@
             </a>
           {/if}
           
-          {#if item.children && aiAgentsExpanded}
+          {#if item.children && currentPath.startsWith('/agents')}
             <div class="ml-6 mt-1 space-y-1">
               {#each item.children as child}
                 <a
                   href={child.href}
-                  on:click={handleNavigation}
+                  on:click|preventDefault={() => { goto(child.href, { keepfocus: true, noscroll: true }); handleNavigation(); }}
                   class={`group flex items-center px-2 py-1.5 text-sm rounded-md transition-colors ${
-                    currentPath === child.href
+                    normalizedPath === (child.href.endsWith('/') ? child.href.slice(0, -1) : child.href) || 
+                    normalizedPath.startsWith((child.href.endsWith('/') ? child.href.slice(0, -1) : child.href) + '/')
                       ? 'bg-primary-100 text-primary-800 dark:bg-primary-800 dark:text-primary-200 font-medium'
                       : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-300'
                   }`}
@@ -230,7 +247,7 @@
       {#each bottomNavigation as item}
         <a
           href={item.href}
-          on:click={handleNavigation}
+          on:click|preventDefault={() => { goto(item.href, { keepfocus: true, noscroll: true }); handleNavigation(); }}
           class={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${
             isActive(item.href)
               ? 'bg-primary-50 text-primary-700 dark:bg-primary-900 dark:text-primary-200'
