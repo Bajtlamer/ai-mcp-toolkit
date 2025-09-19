@@ -218,6 +218,16 @@ secrets/
 *.backup
 *.old
 
+# Debug and testing artifacts
+nohup.out
+*debug*
+*test*.js
+*test*.html
+*.tmp
+*.log
+mcp_server.log
+.env.backup*
+
 # SvelteKit build outputs (should NOT be versioned)
 .svelte-kit/
 ui/.svelte-kit/

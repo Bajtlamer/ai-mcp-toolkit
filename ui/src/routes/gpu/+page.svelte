@@ -74,7 +74,6 @@
   
   // Reactive chart initialization when canvas elements are available
   $: if (utilizationCanvas && temperatureCanvas && memoryCanvas && inferenceCanvas && !utilizationChart) {
-    console.log('Canvas elements available, initializing charts');
     initializeCharts();
   }
   
@@ -116,7 +115,6 @@
     // Destroy any existing charts first
     destroyCharts();
     
-    console.log('Initializing charts...');
     
     const commonOptions = {
       responsive: true,
@@ -160,7 +158,6 @@
     
     // GPU Utilization Chart
     if (utilizationCanvas) {
-      console.log('Creating utilization chart');
       utilizationChart = new Chart(utilizationCanvas, {
         type: 'line',
         data: {
@@ -183,12 +180,7 @@
           }
         }
       });
-      console.log('Utilization chart created:', !!utilizationChart);
-    } else {
-      console.log('Inference canvas not found');
     }
-    
-    console.log('All charts initialized successfully');
     
     // Temperature Chart
     if (temperatureCanvas) {
@@ -286,9 +278,6 @@
         chart.data.labels = labels;
         chart.data.datasets[0].data = dataPoints;
         chart.update('none'); // No animation for real-time updates
-        if (dataPoints.length % 5 === 0) { // Log every 5 updates to avoid spam
-          console.log(`Updated ${name} chart: ${dataPoints.length} points, latest: ${dataPoints[dataPoints.length-1]}`);
-        }
       }
     });
   }
@@ -331,14 +320,12 @@
         };
         
         metricsHistory = [...metricsHistory, newPoint].slice(-maxHistorySize);
-        console.log('Metrics updated:', metricsHistory.length, 'points');
       }
       
       lastUpdated = new Date();
       loading = false;
       
     } catch (err) {
-      console.error('Failed to load GPU data:', err);
       error = err.message;
       loading = false;
       
@@ -424,7 +411,7 @@
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('Failed to download report:', err);
+      // Silently handle download error
     }
   }
   
@@ -477,7 +464,7 @@
         availableModels = data.available || [];
       }
     } catch (e) {
-      console.warn('Failed to fetch available models', e);
+      // Silently handle model fetch error
     } finally {
       loadingModels = false;
     }
@@ -495,11 +482,9 @@
       if (data.success) {
         await loadGPUData();
         await refreshModels();
-      } else {
-        console.warn('Model switch failed:', data.error);
       }
     } catch (e) {
-      console.error('Error switching model', e);
+      // Silently handle model switch error
     } finally {
       switching = false;
     }

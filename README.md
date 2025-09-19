@@ -25,6 +25,19 @@ A comprehensive AI-powered text processing toolkit built on the Model Context Pr
 - 🚀 **Easy Deployment** - Docker and native installation options
 - 🔒 **Privacy-First** - All processing happens locally
 
+## ✨ Production Ready
+
+This AI MCP Toolkit is production-ready with:
+
+- 🧹 **Clean codebase** - No debug logs, test files, or temporary artifacts
+- 🔒 **Secure defaults** - Environment-based configuration, no hardcoded secrets
+- 📋 **Comprehensive logging** - Structured logging with configurable levels
+- 🔧 **Cross-platform support** - Automatic environment detection and optimization
+- 🐳 **Container ready** - Docker support with health checks
+- 📊 **Monitoring** - Built-in GPU monitoring and performance metrics
+- 🔄 **Auto-recovery** - Graceful error handling and fallback mechanisms
+- 📖 **Complete documentation** - Comprehensive guides and API documentation
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -34,7 +47,28 @@ A comprehensive AI-powered text processing toolkit built on the Model Context Pr
 
 ### Installation
 
-#### Option 1: Docker (Recommended for Production)
+#### Smart Setup (Recommended)
+The AI MCP Toolkit includes intelligent environment detection and automatic configuration:
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/ai-mcp-toolkit.git
+cd ai-mcp-toolkit
+
+# Run the enhanced setup script (works on Linux, macOS, Windows)
+./setup.sh
+```
+
+The setup script will automatically:
+- 🔍 Detect your platform (Linux, macOS, Windows) and hardware (NVIDIA, Apple Silicon, AMD, CPU)
+- 🧠 Select the optimal AI model for your system
+- ⚙️ Generate platform-specific configuration
+- 📦 Install all required dependencies
+- 🦙 Set up Ollama with the right model
+
+#### Manual Setup Options
+
+##### Option 1: Docker (Alternative for Production)
 ```bash
 # Clone and start with Docker
 git clone https://github.com/yourusername/ai-mcp-toolkit.git
@@ -79,6 +113,27 @@ cp .env.example .env
 # Edit with your preferences (optional)
 nano .env
 ```
+
+### Environment Management
+
+After installation, you can easily switch between different environment configurations:
+
+```bash
+# Interactive environment switcher
+./switch-environment.sh
+
+# Or manually copy configuration templates
+cp configs/templates/.env.cpu .env              # CPU-only
+cp configs/templates/.env.linux-nvidia .env     # NVIDIA GPU
+cp configs/templates/.env.macos-apple-silicon .env # Apple Silicon
+```
+
+**Available Configurations:**
+- **linux-nvidia** - Optimized for NVIDIA GPUs (RTX/GTX series)
+- **macos-apple-silicon** - Optimized for Apple M1/M2/M3/M4 chips  
+- **cpu** - Universal CPU-only fallback
+
+> 📚 **Need more details?** See the comprehensive [Cross-Platform Setup Guide](CROSS_PLATFORM_SETUP.md) for detailed instructions, troubleshooting, and platform-specific optimizations.
 
 ### Running the Application
 

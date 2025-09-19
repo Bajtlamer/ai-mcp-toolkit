@@ -333,7 +333,7 @@
         </div>
       </div>
 
-      <ModelSwitcher on:modelChanged={(e) => console.log('Model changed to:', e.detail.model)} />
+      <ModelSwitcher />
     </div>
 
     <!-- UI Preferences -->

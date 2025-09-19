@@ -189,4 +189,4 @@ def create_default_config() -> None:
     config = Config()
     config_path = get_default_config_path()
     config.to_file(config_path)
-    print(f"Default configuration created at: {config_path}")
+    # Configuration created successfully - caller will handle messaging

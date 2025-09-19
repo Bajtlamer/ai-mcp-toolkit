@@ -172,10 +172,8 @@
         
       } else {
         error = result.error || 'Failed to anonymize text';
-        console.error('Anonymization error:', result.error);
       }
     } catch (err) {
-      console.error('Anonymization error:', err);
       error = 'Failed to connect to server. Make sure the MCP server is running on port 8000.';
     } finally {
       loading = false;
@@ -205,7 +203,6 @@
         analysisResults = JSON.parse(result.result);
       }
     } catch (err) {
-      console.warn('Could not generate analysis report:', err);
     }
   }
   
@@ -278,14 +275,11 @@
       
       if (result.success) {
         toast.success('Sensitive information detected');
-        console.log('Detection results:', result.result);
         // You could display the results in a modal or analysis panel
       } else {
         toast.error(result.error || 'Failed to detect sensitive information');
-        console.error('Detection error:', result.error);
       }
     } catch (error) {
-      console.error('Detection error:', error);
       toast.error('Failed to connect to server. Make sure the MCP server is running on port 8000.');
     } finally {
       loading = false;

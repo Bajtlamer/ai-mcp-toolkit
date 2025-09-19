@@ -38,7 +38,6 @@ export async function POST({ request }) {
           const parts = trimmedLine.split(/\s+/);
           if (parts.length > 0 && parts[0]) {
             const modelName = parts[0];
-            console.log(`Stopping model: ${modelName}`);
             await execAsync(`ollama stop "${modelName}"`);
           }
         }
@@ -91,10 +90,9 @@ export async function POST({ request }) {
     }
 
   } catch (error) {
-    console.error('Model switch error:', error);
-    return json({ 
-      success: false, 
-      error: `Failed to switch model: ${error.message}` 
+    return json({
+      success: false,
+      error: `Failed to switch model: ${error.message}`
     }, { status: 500 });
   }
 }
@@ -137,7 +135,7 @@ export async function GET() {
         }
       }
     } catch (error) {
-      console.warn('Error getting current model:', error.message);
+      // Silently handle error - model detection is not critical
     }
 
     return json({
@@ -146,7 +144,6 @@ export async function GET() {
       current: currentModel
     });
   } catch (error) {
-    console.error('Error fetching models:', error);
     return json({ 
       success: false, 
       error: error.message 

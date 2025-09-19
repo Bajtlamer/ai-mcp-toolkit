@@ -95,7 +95,6 @@
         }
       } catch (error) {
         console.error('Markdown parsing error:', error);
-        console.error('Content that caused error:', content);
         // Fallback to escaped plain text
         const safeContent = String(content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         renderedHtml = `<p>${safeContent}</p>`;

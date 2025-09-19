@@ -72,13 +72,10 @@ export class ChatAPI {
       }
 
     } catch (error) {
-      console.error('Chat API error:', error);
-      
       // Fallback to direct Ollama API if MCP server is not available
       try {
         return await this.fallbackToOllama(message, conversationHistory);
       } catch (fallbackError) {
-        console.error('Fallback error:', fallbackError);
         throw new Error('Failed to get AI response. Please ensure the MCP server or Ollama is running.');
       }
     }
@@ -325,7 +322,6 @@ export class ChatAPI {
       return fullResponse;
 
     } catch (error) {
-      console.error('Streaming error:', error);
       throw error;
     }
   }
@@ -379,7 +375,7 @@ export class ChatAPI {
         }
       }
     } catch (error) {
-      console.warn('Could not get model from GPU health API, trying Ollama directly:', error);
+      // Silently fallback to direct Ollama API
     }
     
     // Fallback to direct Ollama API
@@ -397,7 +393,7 @@ export class ChatAPI {
         }
       }
     } catch (error) {
-      console.warn('Could not get active model from Ollama, using default:', error);
+      // Silently fallback to default model
     }
     
     // Final fallback
@@ -429,7 +425,7 @@ export class ChatAPI {
         }
       }
     } catch (error) {
-      console.warn('Could not get model info from GPU health API, trying Ollama directly:', error);
+      // Silently fallback to direct Ollama API
     }
     
     // Fallback to direct Ollama API
@@ -453,7 +449,7 @@ export class ChatAPI {
         }
       }
     } catch (error) {
-      console.warn('Could not get active model info from Ollama:', error);
+      // Silently fallback to default model info
     }
     
     return {

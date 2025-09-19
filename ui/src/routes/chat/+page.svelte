@@ -69,7 +69,6 @@
     try {
       serverStatus = await chatAPI.getServerStatus();
     } catch (err) {
-      console.error('Failed to check server status:', err);
       serverStatus = { mcp: false, ollama: false, canChat: false };
     }
   }
@@ -149,8 +148,7 @@
       } else if (typeof response === 'string') {
         assistantContent = response;
       } else {
-        console.error('Invalid response format:', response);
-        assistantContent = 'Error: Invalid response format - received: ' + JSON.stringify(response);
+        assistantContent = 'Error: Invalid response format';
       }
       
       const assistantMessage = {
@@ -164,7 +162,6 @@
       conversations.addThinkingTime($currentConversation.id, thinkingTime);
     } catch (err) {
       error = err.message || 'Failed to get AI response';
-      console.error('Chat error:', err);
     } finally {
       conversations.setConversationLoading($currentConversation.id, false);
     }
@@ -209,8 +206,7 @@
       } else if (typeof response === 'string') {
         regeneratedContent = response;
       } else {
-        console.error('Invalid response format in regenerate:', response);
-        regeneratedContent = 'Error: Invalid response format - received: ' + JSON.stringify(response);
+        regeneratedContent = 'Error: Invalid response format';
       }
       
       const assistantMessage = {
@@ -226,7 +222,6 @@
       conversations.addThinkingTime($currentConversation.id, thinkingTime);
     } catch (err) {
       error = err.message || 'Failed to regenerate response';
-      console.error('Regenerate error:', err);
     } finally {
       regeneratingMessageId = null;
       conversations.setConversationLoading($currentConversation.id, false);

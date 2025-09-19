@@ -160,7 +160,6 @@
       
       return true;
     } catch (err) {
-      console.error('Failed to setup marked:', err);
       return false;
     }
   }
@@ -174,7 +173,7 @@
         languages: ['javascript', 'typescript', 'python', 'java', 'cpp', 'c', 'html', 'css', 'json', 'xml', 'bash', 'shell', 'yaml', 'sql', 'php', 'go', 'rust', 'swift']
       });
     } catch (error) {
-      console.error('Failed to initialize highlight.js:', error);
+      // Silently handle highlight.js initialization failure
     }
     
     // Initialize marked with our custom renderer
@@ -192,10 +191,10 @@
             button.style.color = '';
           }, 1000);
         }).catch(err => {
-          console.error('Failed to copy code:', err);
+          // Silently handle copy failure
         });
       } catch (err) {
-        console.error('Copy function error:', err);
+        // Silently handle copy error
       }
     };
   });
@@ -217,8 +216,6 @@
           renderedHtml = '';
         }
       } catch (error) {
-        console.error('Markdown parsing error:', error);
-        console.error('Problematic content:', content);
         // Ultra-safe fallback
         const escapedContent = escapeHtml(toSafeString(content));
         renderedHtml = `<div style="border: 1px solid #fbbf24; background: #fef3c7; padding: 1rem; border-radius: 4px; color: #92400e;">
