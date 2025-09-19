@@ -91,7 +91,7 @@
   }
 </script>
 
-<header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
+<header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 min-h-2">
   <div class="flex items-center justify-between">
     <div class="flex items-center space-x-4">
       <!-- Mobile menu button -->
@@ -104,7 +104,7 @@
       </button>
       
       <!-- Page title -->
-      <div class="flex items-center space-x-2">
+      <div class="flex items-center space-x-2 min-h-24">
         <h1 class="text-xl font-semibold text-gray-900 dark:text-white">
           {pageTitle}
         </h1>

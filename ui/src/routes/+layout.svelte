@@ -49,7 +49,7 @@
     
     <!-- Page content -->
     <main class="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900">
-      <div class="container mx-auto px-4 py-6 max-w-7xl">
+      <div class="container mx-auto px-4 py-6 max-w-full">
         <slot />
       </div>
     </main>

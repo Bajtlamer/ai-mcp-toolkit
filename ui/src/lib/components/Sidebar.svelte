@@ -64,7 +64,7 @@
     if (href === '/') {
       return currentPath === '/';
     }
-    return currentPath.startsWith(href);
+    return currentPath === href || (href !== '/' && currentPath.startsWith(href + '/'));
   }
   
   function isChildActive(children) {
@@ -108,7 +108,7 @@
 }`}>
   <div class="flex flex-col h-full">
     <!-- Logo and close button -->
-    <div class="flex items-center justify-between px-4 py-4 border-b border-gray-200 dark:border-gray-700">
+    <div class="flex items-center justify-between px-4 py-4 border-b border-gray-200 dark:border-gray-700 min-h-24">
       <div class="flex items-center space-x-2">
         <div class="w-8 h-8 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center">
           <Bot size={18} class="text-white" />
@@ -138,7 +138,7 @@
             <button
               on:click={toggleAiAgents}
               class={`group flex items-center justify-between w-full px-2 py-2 text-sm font-medium rounded-md transition-colors ${
-                (currentPath === item.href) || (currentPath !== '/' && currentPath.startsWith(item.href)) || isChildActive(item.children)
+                isActive(item.href) || isChildActive(item.children)
                   ? 'bg-primary-50 text-primary-700 dark:bg-primary-900 dark:text-primary-200'
                   : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
               }`}
@@ -148,10 +148,10 @@
                   this={item.icon} 
                   size={18} 
                   class={`mr-3 flex-shrink-0 ${
-                    (currentPath === item.href) || (currentPath !== '/' && currentPath.startsWith(item.href)) || isChildActive(item.children)
+                    isActive(item.href) || isChildActive(item.children)
                       ? 'text-primary-500'
                       : 'text-gray-400 group-hover:text-gray-500 dark:group-hover:text-gray-300'
-                  }`} 
+                  }`}
                 />
                 {item.name}
               </div>
@@ -159,8 +159,8 @@
               <svg 
                 class={`w-4 h-4 transition-transform duration-200 ${
                   aiAgentsExpanded ? 'rotate-90' : ''
-                }
-                  (currentPath === item.href) || (currentPath !== '/' && currentPath.startsWith(item.href)) || isChildActive(item.children)
+                } ${
+                  isActive(item.href) || isChildActive(item.children)
                     ? 'text-primary-500'
                     : 'text-gray-400 group-hover:text-gray-500 dark:group-hover:text-gray-300'
                 }`}
@@ -177,7 +177,7 @@
               href={item.href}
               on:click={handleNavigation}
               class={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${
-                (currentPath === item.href) || (currentPath !== '/' && currentPath.startsWith(item.href)) || isChildActive(item.children)
+                isActive(item.href)
                   ? 'bg-primary-50 text-primary-700 dark:bg-primary-900 dark:text-primary-200'
                   : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
               }`}
@@ -186,10 +186,10 @@
                 this={item.icon} 
                 size={18} 
                 class={`mr-3 flex-shrink-0 ${
-                  (currentPath === item.href) || (currentPath !== '/' && currentPath.startsWith(item.href)) || isChildActive(item.children)
+                  isActive(item.href)
                     ? 'text-primary-500'
                     : 'text-gray-400 group-hover:text-gray-500 dark:group-hover:text-gray-300'
-                }`} 
+                }`}
               />
               {item.name}
             </a>

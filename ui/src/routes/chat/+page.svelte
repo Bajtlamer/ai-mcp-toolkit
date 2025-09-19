@@ -26,7 +26,7 @@
   let chatContainer;
   let error = null;
   let serverStatus = { mcp: false, ollama: false, canChat: false };
-  let showSidebar = true;
+  let showSidebar = false; // Start with sidebar closed on mobile, open on desktop
   let editingMessageId = null;
   let editingText = '';
   let regeneratingMessageId = null;
@@ -44,12 +44,25 @@
   });
 
   onMount(async () => {
+    // Handle responsive sidebar visibility
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) { // lg breakpoint
+        showSidebar = true;
+      }
+    };
+    
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    
     // Check server status
     await checkServerStatus();
     // Set up periodic status checks
     const statusInterval = setInterval(checkServerStatus, 30000); // Check every 30 seconds
     
-    return () => clearInterval(statusInterval);
+    return () => {
+      clearInterval(statusInterval);
+      window.removeEventListener('resize', handleResize);
+    };
   });
 
   async function checkServerStatus() {
@@ -323,328 +336,342 @@
   </div>
 {/if}
 
-<div class="h-screen flex bg-gray-50 dark:bg-gray-900">
-  <!-- Sidebar -->
-  <div class="{showSidebar ? 'w-80' : 'w-0'} transition-all duration-300 overflow-hidden">
+<!-- True 2-Column ChatGPT Layout -->
+<div class="h-full flex bg-white dark:bg-gray-900" style="margin: -1.5rem; height: calc(100vh - 4rem);">
+  <!-- Left Column: Conversation History (30% width) -->
+  <div class="{showSidebar ? 'w-[30%]' : 'w-0'} flex-shrink-0 transition-all duration-300 overflow-hidden bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
     <ConversationSidebar 
       on:conversationChanged={onConversationChanged}
       on:showNotification={(e) => showNotification(e.detail.type, e.detail.message)}
     />
   </div>
 
-  <!-- Main Chat Area -->
-  <div class="flex-1 flex flex-col">
-    <!-- Chat Header -->
-    <div class="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6 py-4">
+  <!-- Right Column: Chat Area -->
+  <div class="flex-1 flex flex-col bg-white dark:bg-gray-900">
+    <!-- Minimal Header -->
+    <div class="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6 py-3">
       <div class="flex items-center justify-between">
-        <div class="flex items-center space-x-4">
+        <div class="flex items-center space-x-3">
+          <!-- Sidebar toggle -->
           <button
             on:click={toggleSidebar}
             class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            title="Toggle sidebar"
+            title="Toggle conversation history"
           >
-            <Sidebar size={20} />
+            <Sidebar size={18} />
           </button>
           
-          <div class="flex items-center space-x-3">
-            <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
-              <MessageSquare size={20} class="text-white" />
-            </div>
-            <div>
-              <h1 class="text-xl font-semibold text-gray-900 dark:text-white">
-                {$currentConversation?.title || 'AI Chat'}
-              </h1>
-              <div class="flex items-center space-x-2">
-                <div class="w-2 h-2 {serverStatus.canChat ? 'bg-green-500' : 'bg-red-500'} rounded-full {serverStatus.canChat ? 'animate-pulse' : ''}"></div>
-                <span class="text-sm text-gray-500 dark:text-gray-400">
-                  {#if serverStatus.mcp}
-                    MCP Server • {serverStatus.model?.name || 'Unknown Model'}
-                  {:else if serverStatus.ollama}
-                    Direct Ollama • {serverStatus.model?.name || 'Unknown Model'}
-                  {:else}
-                    Disconnected
-                  {/if}
-                </span>
-              </div>
+          <!-- Conversation Title -->
+          <div>
+            <h1 class="text-lg font-semibold text-gray-900 dark:text-white truncate">
+              {$currentConversation?.title || 'New Chat'}
+            </h1>
+            <div class="flex items-center space-x-2 text-xs">
+              <div class="w-2 h-2 {serverStatus.canChat ? 'bg-green-500' : 'bg-red-500'} rounded-full {serverStatus.canChat ? 'animate-pulse' : ''}"></div>
+              <span class="text-gray-500 dark:text-gray-400">
+                {serverStatus.model?.name || 'AI Assistant'}
+              </span>
             </div>
           </div>
         </div>
         
+        <!-- Action Buttons -->
         <div class="flex items-center space-x-2">
-          <button
-            on:click={exportCurrentConversation}
-            class="flex items-center px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition-colors"
-            title="Export conversation"
-          >
-            <Download size={16} class="mr-2" />
-            Export
-          </button>
-          
           {#if currentMessages.length > 1}
             <button
               on:click={regenerateLastResponse}
               disabled={isLoading || !serverStatus.canChat}
-              class="flex items-center px-3 py-2 text-sm bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-800/70 text-blue-700 dark:text-blue-300 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title="Regenerate last response"
             >
-              <RotateCcw size={16} class="mr-2" />
-              Regenerate
+              <RotateCcw size={16} />
             </button>
           {/if}
         </div>
       </div>
     </div>
 
-    <!-- Messages Area -->
-    <div class="flex-1 overflow-hidden">
-      <div 
-        bind:this={chatContainer}
-        class="h-full overflow-y-auto px-6 py-4 space-y-6 chat-scroll"
-      >
-        {#if currentMessages.length === 0}
-          <div class="flex items-center justify-center h-full">
-            <div class="text-center max-w-md">
-              <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center mb-4 mx-auto">
-                <MessageSquare size={32} class="text-white" />
-              </div>
-              <h2 class="text-2xl font-semibold text-gray-900 dark:text-white mb-2">Start a conversation</h2>
-              <p class="text-gray-600 dark:text-gray-400 mb-6">Ask me anything! I'm powered by {serverStatus.model?.name || 'AI'} and can help with a wide variety of tasks.</p>
-              <div class="grid grid-cols-1 gap-2">
-                <button
-                  on:click={() => inputText = 'Hello! What can you help me with today?'}
-                  class="p-3 text-left text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                >
-                  👋 Say hello
-                </button>
-                <button
-                  on:click={() => inputText = 'Can you help me write a professional email?'}
-                  class="p-3 text-left text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                >
-                  ✍️ Help with writing
-                </button>
-                <button
-                  on:click={() => inputText = 'Explain machine learning in simple terms'}
-                  class="p-3 text-left text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                >
-                  🧠 Learn something new
-                </button>
-              </div>
-            </div>
-          </div>
-        {:else}
-          {#each currentMessages as message (message.id)}
-            <div class="flex {message.type === 'user' ? 'justify-end' : 'justify-start'} animate-fadeIn">
-              <div class="flex items-start space-x-3 max-w-4xl w-full">
-                {#if message.type === 'assistant'}
-                  <div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <Bot size={18} class="text-white" />
-                  </div>
-                {/if}
-                
-                <div class="flex-1 {message.type === 'user' ? 'flex justify-end' : ''}">
-                  <div class="{message.type === 'user' ? 'max-w-2xl' : 'w-full'}">
-                    <div class="flex items-center space-x-2 mb-2 {message.type === 'user' ? 'justify-end' : ''}">
-                      <span class="text-xs font-medium {message.type === 'user' ? 'text-blue-600 dark:text-blue-400' : 'text-purple-600 dark:text-purple-400'}">
-                        {message.type === 'user' ? 'You' : (serverStatus.model?.name || 'AI Assistant')}
-                      </span>
-                      <div class="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
-                        <span>
-                          {formatTimestamp(message.timestamp)}
-                          {#if message.edited}
-                            <span class="ml-1 text-gray-400 dark:text-gray-500">(edited)</span>
-                          {/if}
-                        </span>
-                        {#if message.metrics && message.type === 'assistant'}
-                          <span class="hidden sm:inline-flex items-center space-x-1 px-2 py-1 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 rounded text-xs">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                              <circle cx="12" cy="12" r="10"/>
-                              <polyline points="12,6 12,12 16,14"/>
-                            </svg>
-                            <span>{message.metrics.totalTime.toFixed(1)}s</span>
-                            {#if message.metrics.tokensPerSecond > 0}
-                              <span>•</span>
-                              <span>{message.metrics.tokensPerSecond}t/s</span>
-                            {/if}
-                          </span>
-                        {/if}
-                      </div>
-                    </div>
-                    
-                    <div class="relative group">
-                      {#if editingMessageId === message.id}
-                        <div class="bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-600 rounded-lg p-4">
-                          <textarea
-                            bind:value={editingText}
-                            class="w-full resize-none bg-transparent text-gray-900 dark:text-white focus:outline-none"
-                            rows="3"
-                          ></textarea>
-                          <div class="flex justify-end space-x-2 mt-3">
-                            <button
-                              on:click={cancelMessageEdit}
-                              class="px-3 py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              on:click={saveMessageEdit}
-                              class="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-                            >
-                              Save
-                            </button>
-                          </div>
-                        </div>
-                      {:else}
-                        <div class="{message.type === 'user' 
-                          ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg' 
-                          : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-600 shadow-sm'
-                        } p-4 rounded-lg {message.type === 'user' ? 'rounded-br-sm' : 'rounded-tl-sm'}">
-                          {#if message.type === 'user'}
-                            <div class="prose prose-sm max-w-none prose-invert">
-                              <pre class="whitespace-pre-wrap text-sm font-sans leading-relaxed bg-transparent border-none p-0 m-0">{message.content}</pre>
-                            </div>
-                          {:else}
-                            <SafeMarkdownRenderer content={message.content} className="text-gray-900 dark:text-white" />
-                          {/if}
-                        </div>
-                        
-                        <!-- Message Actions -->
-                        <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <div class="flex items-center space-x-1">
-                            <button
-                              on:click={() => copyMessage(message.content)}
-                              class="p-1.5 {message.type === 'user' ? 'bg-blue-700/50 hover:bg-blue-700/70' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'} rounded-md transition-colors"
-                              title="Copy message"
-                            >
-                              <Copy size={12} class="{message.type === 'user' ? 'text-white' : 'text-gray-600 dark:text-gray-300'}" />
-                            </button>
-                            
-                            {#if message.type === 'user'}
-                              <button
-                                on:click={() => startEditingMessage(message)}
-                                class="p-1.5 bg-blue-700/50 hover:bg-blue-700/70 rounded-md transition-colors"
-                                title="Edit message"
-                              >
-                                <Edit3 size={12} class="text-white" />
-                              </button>
-                            {/if}
-                          </div>
-                        </div>
-                      {/if}
-                    </div>
-                  </div>
-                </div>
-                
-                {#if message.type === 'user'}
-                  <div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <User size={18} class="text-white" />
-                  </div>
-                {/if}
-              </div>
-            </div>
-          {/each}
-          
-          <!-- Loading indicator -->
-          {#if isLoading}
-            <div class="flex justify-start animate-fadeIn">
-              <div class="flex items-start space-x-3 max-w-4xl w-full">
-                <div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                  <Bot size={18} class="text-white" />
-                </div>
-                <div class="flex-1">
-                  <div class="flex items-center space-x-2 mb-2">
-                      <span class="text-xs font-medium text-purple-600 dark:text-purple-400">{serverStatus.model?.name || 'AI Assistant'}</span>
-                  </div>
-                  <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 p-4 rounded-lg rounded-tl-sm shadow-sm">
-                    <div class="flex items-center space-x-3">
-                      <div class="flex space-x-1">
-                        <div class="w-2.5 h-2.5 bg-blue-400 rounded-full animate-bounce"></div>
-                        <div class="w-2.5 h-2.5 bg-purple-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
-                        <div class="w-2.5 h-2.5 bg-blue-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
-                      </div>
-                      <div class="typing-indicator">
-                        <span class="text-sm text-gray-500 dark:text-gray-400">AI is thinking</span>
-                        <span class="typing-dots">
-                          <span>.</span><span>.</span><span>.</span>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          {/if}
-          
-          <!-- Error message -->
-          {#if error}
-            <div class="flex justify-start animate-fadeIn">
-              <div class="flex items-start space-x-3 max-w-4xl w-full">
-                <div class="flex-shrink-0 w-10 h-10 bg-red-500 rounded-xl flex items-center justify-center shadow-lg">
-                  <AlertTriangle size={18} class="text-white" />
-                </div>
-                <div class="flex-1">
-                  <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-                    <div class="text-red-600 dark:text-red-400 text-sm">
-                      <strong>Error:</strong> {error}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          {/if}
-        {/if}
-      </div>
-    </div>
-
-    <!-- Input Section -->
-    <div class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6 py-4">
-      <div class="flex items-end space-x-3">
-        <div class="flex-1 relative">
-          <textarea
-            bind:value={inputText}
-            on:keydown={handleKeyDown}
-            placeholder="Message {serverStatus.model?.name || 'AI'}..."
-            class="w-full px-4 py-3 pr-12 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 transition-all"
-            rows="1"
-            style="min-height: 52px; max-height: 120px;"
-            disabled={!serverStatus.canChat}
-          ></textarea>
-          
-          <!-- Character counter -->
-          <div class="absolute bottom-2 right-2 text-xs text-gray-400 dark:text-gray-500">
-            {inputText.length}
-          </div>
-        </div>
-        
-        <button
-          on:click={sendMessage}
-          disabled={!inputText.trim() || isLoading || !serverStatus.canChat}
-          class="flex items-center justify-center w-12 h-12 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-400 disabled:to-gray-400 text-white rounded-xl transition-all duration-200 transform hover:scale-105 disabled:hover:scale-100 shadow-lg flex-shrink-0 disabled:opacity-50"
-          title="Send message (Enter)"
+    <!-- Chat Content Area (Scrollable) -->
+    <div class="flex-1 overflow-y-auto">
+      <div class="w-full">
+        <!-- Messages and Input Container -->
+        <div 
+          bind:this={chatContainer}
+          class="min-h-full flex flex-col"
         >
-          {#if isLoading}
-            <div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-          {:else}
-            <Send size={18} />
-          {/if}
-        </button>
-      </div>
-      
-      <!-- Status and shortcuts -->
-      <div class="flex items-center justify-between mt-2 text-xs text-gray-500 dark:text-gray-400">
-        <div class="flex items-center space-x-4">
-          <span>
-            Press <kbd class="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs font-mono">Enter</kbd> to send • 
-            <kbd class="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs font-mono">Shift + Enter</kbd> for new line
-          </span>
-        </div>
-        <div class="flex items-center space-x-1">
-          {#if serverStatus.canChat}
-            <Wifi size={14} class="text-green-500" />
-            <span class="text-green-600 dark:text-green-400">Connected</span>
-          {:else}
-            <WifiOff size={14} class="text-red-500" />
-            <span class="text-red-600 dark:text-red-400">Disconnected</span>
-          {/if}
+          <!-- Messages Area -->
+          <div class="flex-1 px-6 py-6 space-y-6">
+            {#if currentMessages.length === 0}
+              <!-- Welcome Screen -->
+              <div class="text-center py-12">
+                <div class="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mb-6 mx-auto">
+                  <MessageSquare size={36} class="text-white" />
+                </div>
+                <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">How can I help you today?</h2>
+                <p class="text-lg text-gray-600 dark:text-gray-400 mb-8">
+                  I'm {serverStatus.model?.name || 'your AI assistant'}, ready to help with writing, analysis, coding, and more.
+                </p>
+                
+                <!-- Quick Start Examples -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
+                  <button
+                    on:click={() => inputText = 'Hello! What can you help me with today?'}
+                    class="group p-4 text-left bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-sm transition-all"
+                  >
+                    <div class="text-2xl mb-2">👋</div>
+                    <div class="font-medium text-gray-900 dark:text-white mb-1">Get Started</div>
+                    <div class="text-sm text-gray-600 dark:text-gray-400">Say hello and see what I can do</div>
+                  </button>
+                  
+                  <button
+                    on:click={() => inputText = 'Help me write a professional email'}
+                    class="group p-4 text-left bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-sm transition-all"
+                  >
+                    <div class="text-2xl mb-2">✍️</div>
+                    <div class="font-medium text-gray-900 dark:text-white mb-1">Writing Help</div>
+                    <div class="text-sm text-gray-600 dark:text-gray-400">Emails, documents, and more</div>
+                  </button>
+                  
+                  <button
+                    on:click={() => inputText = 'Explain machine learning concepts'}
+                    class="group p-4 text-left bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-sm transition-all"
+                  >
+                    <div class="text-2xl mb-2">🧠</div>
+                    <div class="font-medium text-gray-900 dark:text-white mb-1">Learning</div>
+                    <div class="text-sm text-gray-600 dark:text-gray-400">Explain complex topics simply</div>
+                  </button>
+                  
+                  <button
+                    on:click={() => inputText = 'Help me debug this code'}
+                    class="group p-4 text-left bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-sm transition-all"
+                  >
+                    <div class="text-2xl mb-2">💻</div>
+                    <div class="font-medium text-gray-900 dark:text-white mb-1">Code Help</div>
+                    <div class="text-sm text-gray-600 dark:text-gray-400">Debug and improve your code</div>
+                  </button>
+                </div>
+              </div>
+            {:else}
+              {#each currentMessages as message (message.id)}
+                <div class="message-container animate-fadeIn">
+                  {#if message.type === 'assistant'}
+                    <!-- AI Message -->
+                    <div class="w-full py-6">
+                      <div class="flex items-start space-x-4">
+                        <div class="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center">
+                          <Bot size={16} class="text-white" />
+                        </div>
+                        <div class="flex-1 min-w-0 pr-4">
+                          <div class="flex items-center space-x-2 mb-3">
+                            <span class="text-sm font-medium text-gray-900 dark:text-white">
+                              {serverStatus.model?.name || 'AI Assistant'}
+                            </span>
+                            <span class="text-xs text-gray-500 dark:text-gray-400">
+                              {formatTimestamp(message.timestamp)}
+                            </span>
+                            {#if message.metrics}
+                              <span class="text-xs text-gray-500 dark:text-gray-400">
+                                • {message.metrics.totalTime?.toFixed(1)}s
+                              </span>
+                              {#if message.metrics.tokensPerSecond > 0}
+                                <span class="text-xs text-gray-500 dark:text-gray-400">
+                                  • {message.metrics.tokensPerSecond}t/s
+                                </span>
+                              {/if}
+                            {/if}
+                          </div>
+                          
+                          <div class="relative group w-full">
+                            <div class="prose prose-gray dark:prose-invert w-full" style="max-width: none;">
+                              <SafeMarkdownRenderer content={message.content} className="text-gray-800 dark:text-gray-200 leading-relaxed" />
+                            </div>
+                            
+                            <!-- Message Actions -->
+                            <div class="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                on:click={() => copyMessage(message.content)}
+                                class="p-1.5 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-md transition-colors border border-gray-200 dark:border-gray-600 shadow-sm"
+                                title="Copy message"
+                              >
+                                <Copy size={14} class="text-gray-600 dark:text-gray-300" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  {:else}
+                    <!-- User Message -->
+                    <div class="w-full py-6">
+                      <div class="flex items-start space-x-4 justify-end">
+                        <div class="flex-1 flex flex-col items-end">
+                          <div class="flex items-center space-x-2 mb-3">
+                            <span class="text-xs text-gray-500 dark:text-gray-400">
+                              {formatTimestamp(message.timestamp)}
+                              {#if message.edited}
+                                <span class="ml-1">(edited)</span>
+                              {/if}
+                            </span>
+                            <span class="text-sm font-medium text-gray-900 dark:text-white">You</span>
+                          </div>
+                          
+                          <div class="relative group max-w-[80%]">
+                            {#if editingMessageId === message.id}
+                              <div class="bg-gray-100 dark:bg-gray-700 rounded-2xl p-4 w-full">
+                                <textarea
+                                  bind:value={editingText}
+                                  class="w-full resize-none bg-transparent text-gray-900 dark:text-white focus:outline-none"
+                                  rows="3"
+                                ></textarea>
+                                <div class="flex justify-end space-x-2 mt-3">
+                                  <button
+                                    on:click={cancelMessageEdit}
+                                    class="px-3 py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    on:click={saveMessageEdit}
+                                    class="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                                  >
+                                    Save
+                                  </button>
+                                </div>
+                              </div>
+                            {:else}
+                              <div class="bg-blue-600 text-white rounded-3xl px-5 py-3">
+                                <div class="prose prose-sm max-w-none prose-invert">
+                                  <pre class="whitespace-pre-wrap font-sans leading-relaxed bg-transparent border-none p-0 m-0">{message.content}</pre>
+                                </div>
+                              </div>
+                              
+                              <!-- Message Actions -->
+                              <div class="absolute top-0 left-0 -ml-12 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div class="flex items-center space-x-1">
+                                  <button
+                                    on:click={() => copyMessage(message.content)}
+                                    class="p-1.5 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-md transition-colors border border-gray-200 dark:border-gray-600 shadow-sm"
+                                    title="Copy message"
+                                  >
+                                    <Copy size={12} class="text-gray-600 dark:text-gray-300" />
+                                  </button>
+                                  
+                                  <button
+                                    on:click={() => startEditingMessage(message)}
+                                    class="p-1.5 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-md transition-colors border border-gray-200 dark:border-gray-600 shadow-sm"
+                                    title="Edit message"
+                                  >
+                                    <Edit3 size={12} class="text-gray-600 dark:text-gray-300" />
+                                  </button>
+                                </div>
+                              </div>
+                            {/if}
+                          </div>
+                        </div>
+                        <div class="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
+                          <User size={16} class="text-white" />
+                        </div>
+                      </div>
+                    </div>
+                  {/if}
+                </div>
+              {/each}
+          
+              <!-- Loading indicator -->
+              {#if isLoading}
+                <div class="flex items-start space-x-4 py-6 animate-fadeIn">
+                  <div class="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center">
+                    <Bot size={16} class="text-white" />
+                  </div>
+                  <div class="flex-1">
+                    <div class="flex items-center space-x-2 mb-3">
+                      <span class="text-sm font-medium text-gray-900 dark:text-white">
+                        {serverStatus.model?.name || 'AI Assistant'}
+                      </span>
+                    </div>
+                    <div class="bg-gray-100 dark:bg-gray-800 rounded-2xl px-4 py-3">
+                      <div class="flex items-center space-x-2">
+                        <div class="flex space-x-1">
+                          <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+                          <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+                          <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                        </div>
+                        <span class="text-sm text-gray-600 dark:text-gray-400">Thinking...</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              {/if}
+          
+              <!-- Error message -->
+              {#if error}
+                <div class="flex items-start space-x-4 py-6 animate-fadeIn">
+                  <div class="flex-shrink-0 w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
+                    <AlertTriangle size={16} class="text-white" />
+                  </div>
+                  <div class="flex-1">
+                    <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-4">
+                      <div class="text-red-600 dark:text-red-400 text-sm">
+                        <strong>Error:</strong> {error}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              {/if}
+            {/if}
+          </div>
+          
+          <!-- Input Area (Following the conversation) -->
+          <div class="px-6 py-6 border-t border-gray-200 dark:border-gray-700">
+            <div class="relative">
+              <textarea
+                bind:value={inputText}
+                on:keydown={handleKeyDown}
+                placeholder="Message {serverStatus.model?.name || 'AI'}..."
+                class="w-full px-4 py-3 pr-20 border border-gray-300 dark:border-gray-600 rounded-3xl focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 transition-all max-h-40"
+                rows="1"
+                style="min-height: 52px;"
+                disabled={!serverStatus.canChat}
+              ></textarea>
+              
+              <div class="absolute right-3 bottom-3 flex items-center space-x-2">
+                <!-- Character counter -->
+                {#if inputText.length > 0}
+                  <span class="text-xs text-gray-400 dark:text-gray-500">
+                    {inputText.length}
+                  </span>
+                {/if}
+                
+                <!-- Send button -->
+                <button
+                  on:click={sendMessage}
+                  disabled={!inputText.trim() || isLoading || !serverStatus.canChat}
+                  class="flex items-center justify-center w-9 h-9 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-full transition-all disabled:cursor-not-allowed shadow-sm"
+                  title="Send message (Enter)"
+                >
+                  {#if isLoading}
+                    <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  {:else}
+                    <Send size={16} />
+                  {/if}
+                </button>
+              </div>
+            </div>
+            
+            <!-- Status and shortcuts -->
+            <div class="flex items-center justify-between mt-3 text-xs text-gray-500 dark:text-gray-400">
+              <div>
+                Press <kbd class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs font-mono">Enter</kbd> to send • 
+                <kbd class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs font-mono">Shift+Enter</kbd> for new line
+              </div>
+              <div class="flex items-center space-x-1">
+                <div class="w-2 h-2 {serverStatus.canChat ? 'bg-green-500' : 'bg-red-500'} rounded-full {serverStatus.canChat ? 'animate-pulse' : ''}"></div>
+                <span class="{serverStatus.canChat ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
+                  {serverStatus.canChat ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

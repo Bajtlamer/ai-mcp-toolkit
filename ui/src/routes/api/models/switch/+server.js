@@ -28,12 +28,19 @@ export async function POST({ request }) {
 
     // Stop current models
     try {
-      const { stdout: psOutput } = await execAsync('ollama ps --format json');
-      const runningModels = JSON.parse(psOutput || '[]');
+      const { stdout: psOutput } = await execAsync('ollama ps');
+      const lines = psOutput.split('\n');
       
-      for (const runningModel of runningModels) {
-        if (runningModel.name) {
-          await execAsync(`ollama stop "${runningModel.name}"`);
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        // Skip empty lines and header line
+        if (trimmedLine && !trimmedLine.startsWith('NAME') && !trimmedLine.includes('Done')) {
+          const parts = trimmedLine.split(/\s+/);
+          if (parts.length > 0 && parts[0]) {
+            const modelName = parts[0];
+            console.log(`Stopping model: ${modelName}`);
+            await execAsync(`ollama stop "${modelName}"`);
+          }
         }
       }
     } catch (error) {
@@ -115,10 +122,19 @@ export async function GET() {
     // Get currently running model
     let currentModel = null;
     try {
-      const { stdout: psOutput } = await execAsync('ollama ps --format json');
-      const runningModels = JSON.parse(psOutput || '[]');
-      if (runningModels.length > 0) {
-        currentModel = runningModels[0].name;
+      const { stdout: psOutput } = await execAsync('ollama ps');
+      const lines = psOutput.split('\n');
+      
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        // Skip empty lines, header line, and shell output
+        if (trimmedLine && !trimmedLine.startsWith('NAME') && !trimmedLine.includes('Done') && !trimmedLine.startsWith('[')) {
+          const parts = trimmedLine.split(/\s+/);
+          if (parts.length > 0 && parts[0]) {
+            currentModel = parts[0];
+            break; // Get the first running model
+          }
+        }
       }
     } catch (error) {
       console.warn('Error getting current model:', error.message);

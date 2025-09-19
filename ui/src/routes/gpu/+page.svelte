@@ -53,6 +53,11 @@
   let lastUpdated = null;
   let statusInfo = { icon: XCircle, class: 'text-gray-400' };
   
+  // Available models management
+  let availableModels = [];
+  let loadingModels = false;
+  let switching = false;
+  
   // Real-time metrics history for charts
   let metricsHistory = [];
   const maxHistorySize = 50;
@@ -80,6 +85,7 @@
   
   onMount(async () => {
     await loadGPUData();
+    await refreshModels();
     
     if (autoRefresh) {
       startAutoRefresh();
@@ -440,6 +446,64 @@
     if (temp >= 70) return 'text-yellow-500';
     return 'text-green-500';
   }
+  
+  // Model management helpers
+  function getModelType(name) {
+    if (!name) return 'Unknown';
+    if (name.includes('qwen')) return 'Qwen';
+    if (name.includes('llama')) return 'Llama';
+    if (name.includes('mistral')) return 'Mistral';
+    return 'Other';
+  }
+  
+  function getModelSize(name) {
+    if (!name) return 'Unknown';
+    const match = name.match(/:(\d+)([a-zA-Z]+)/);
+    if (match) return match[1] + match[2].toUpperCase();
+    if (name.includes(':3b')) return '3B';
+    if (name.includes(':7b')) return '7B';
+    if (name.includes(':8b')) return '8B';
+    if (name.includes(':13b')) return '13B';
+    if (name.includes(':14b')) return '14B';
+    return 'Unknown';
+  }
+  
+  async function refreshModels() {
+    try {
+      loadingModels = true;
+      const res = await fetch('/api/models/switch');
+      if (res.ok) {
+        const data = await res.json();
+        availableModels = data.available || [];
+      }
+    } catch (e) {
+      console.warn('Failed to fetch available models', e);
+    } finally {
+      loadingModels = false;
+    }
+  }
+  
+  async function switchToModel(name) {
+    try {
+      switching = name;
+      const res = await fetch('/api/models/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: name })
+      });
+      const data = await res.json();
+      if (data.success) {
+        await loadGPUData();
+        await refreshModels();
+      } else {
+        console.warn('Model switch failed:', data.error);
+      }
+    } catch (e) {
+      console.error('Error switching model', e);
+    } finally {
+      switching = false;
+    }
+  }
 </script>
 
 <svelte:head>
@@ -653,46 +717,208 @@
         </div>
       </div>
       
-      <!-- Model Information -->
+      <!-- Active Model Information -->
       <div class="card">
         <div class="p-6 border-b border-gray-200 dark:border-gray-700">
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
             <Bot class="mr-2 text-primary-500" size={20} />
-            AI Model Status
+            Active AI Model
           </h2>
         </div>
         
         <div class="p-6">
           <div class="space-y-4">
             <div class="flex items-center justify-between">
-              <span class="text-sm font-medium text-gray-600 dark:text-gray-400">Active Model</span>
-              <span class="text-sm text-gray-900 dark:text-white font-mono">
+              <span class="text-sm font-medium text-gray-600 dark:text-gray-400">Current Model</span>
+              <span class="text-sm text-gray-900 dark:text-white font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
                 {gpuHealth?.ollama_model || 'None'}
               </span>
             </div>
             
             <div class="flex items-center justify-between">
               <span class="text-sm font-medium text-gray-600 dark:text-gray-400">GPU Acceleration</span>
-              <span class={`text-sm font-medium ${
+              <span class={`text-sm font-medium flex items-center ${
                 gpuHealth?.ollama_gpu_accelerated ? 'text-green-600' : 'text-red-600'
               }`}>
-                {gpuHealth?.ollama_gpu_accelerated ? '✓ Enabled' : '✗ Disabled'}
+                <div class={`w-2 h-2 rounded-full mr-2 ${
+                  gpuHealth?.ollama_gpu_accelerated ? 'bg-green-500' : 'bg-red-500'
+                }`}></div>
+                {gpuHealth?.ollama_gpu_accelerated ? 'Enabled' : 'Disabled'}
               </span>
             </div>
             
             <div class="flex items-center justify-between">
               <span class="text-sm font-medium text-gray-600 dark:text-gray-400">Avg Response Time</span>
-              <span class="text-sm text-gray-900 dark:text-white">
+              <span class="text-sm text-gray-900 dark:text-white font-mono">
                 {gpuMetrics.performance_summary.average_response_time?.toFixed(3) || '0.000'}s
               </span>
             </div>
             
             <div class="flex items-center justify-between">
-              <span class="text-sm font-medium text-gray-600 dark:text-gray-400">Total Tokens</span>
-              <span class="text-sm text-gray-900 dark:text-white">
+              <span class="text-sm font-medium text-gray-600 dark:text-gray-400">Total Tokens Processed</span>
+              <span class="text-sm text-gray-900 dark:text-white font-mono">
                 {gpuMetrics.performance_summary.total_tokens_processed?.toLocaleString() || '0'}
               </span>
             </div>
+          </div>
+          
+          <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <a href="/settings" class="inline-flex items-center text-sm text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300">
+              <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l4-4 4 4m0 6l-4 4-4-4"></path>
+              </svg>
+              Switch Model
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Available Models Section -->
+    <div class="card">
+      <div class="p-6 border-b border-gray-200 dark:border-gray-700">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+          <svg class="mr-2 text-indigo-500 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+          </svg>
+          Available Models
+        </h2>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          All downloaded models ready for use
+        </p>
+      </div>
+      
+      <div class="p-6">
+        {#if availableModels.length > 0}
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {#each availableModels as model}
+              <div class={`p-4 rounded-lg border transition-all duration-200 ${
+                model.name === gpuHealth?.ollama_model 
+                  ? 'border-primary-300 bg-primary-50 dark:bg-primary-900/20 dark:border-primary-600' 
+                  : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
+              }`}>
+                <div class="flex items-center justify-between">
+                  <div class="flex-1">
+                    <div class="flex items-center space-x-2">
+                      <div class={`w-3 h-3 rounded-full ${
+                        model.name === gpuHealth?.ollama_model ? 'bg-green-500' : 'bg-gray-400'
+                      }`}></div>
+                      <h3 class={`text-sm font-medium ${
+                        model.name === gpuHealth?.ollama_model 
+                          ? 'text-primary-700 dark:text-primary-300' 
+                          : 'text-gray-900 dark:text-white'
+                      }`}>
+                        {model.name}
+                      </h3>
+                      {#if model.name === gpuHealth?.ollama_model}
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200">
+                          Active
+                        </span>
+                      {/if}
+                    </div>
+                    
+                    <div class="mt-2 flex items-center space-x-4 text-xs text-gray-500 dark:text-gray-400">
+                      <span class="flex items-center">
+                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4V2a1 1 0 011-1h8a1 1 0 011 1v2"></path>
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4h10l1 16H6L7 4z"></path>
+                        </svg>
+                        {model.size}
+                      </span>
+                      <span class="flex items-center">
+                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        {model.modified}
+                      </span>
+                    </div>
+                    
+                    <div class="mt-2">
+                      <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                        Model Type: 
+                        <span class={`font-medium ${
+                          getModelType(model.name) === 'Qwen' ? 'text-blue-600 dark:text-blue-400' :
+                          getModelType(model.name) === 'Llama' ? 'text-green-600 dark:text-green-400' :
+                          'text-purple-600 dark:text-purple-400'
+                        }`}>
+                          {getModelType(model.name)}
+                        </span>
+                        • 
+                        <span class="font-medium text-gray-700 dark:text-gray-300">
+                          {getModelSize(model.name)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {#if model.name !== gpuHealth?.ollama_model}
+                    <div class="flex-shrink-0 ml-3">
+                      <button 
+                        on:click={() => switchToModel(model.name)}
+                        disabled={switching}
+                        class="px-3 py-1 text-xs font-medium text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300 border border-primary-300 hover:border-primary-400 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Switch to this model"
+                      >
+                        {switching === model.name ? 'Switching...' : 'Switch'}
+                      </button>
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="text-center py-8">
+            <div class="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012 2v2M7 7h10"></path>
+              </svg>
+            </div>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">
+              No Models Available
+            </h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              No Ollama models found. Download models to get started.
+            </p>
+            <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 max-w-md mx-auto">
+              <p class="text-xs text-gray-600 dark:text-gray-400 mb-2">Example commands to download models:</p>
+              <code class="text-xs bg-white dark:bg-gray-700 px-2 py-1 rounded block mb-1 text-left">
+                ollama pull qwen2.5:7b
+              </code>
+              <code class="text-xs bg-white dark:bg-gray-700 px-2 py-1 rounded block text-left">
+                ollama pull llama3.1:8b
+              </code>
+            </div>
+          </div>
+        {/if}
+        
+        <!-- Model Management Actions -->
+        <div class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <div class="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
+            <span>Total Models: {availableModels.length}</span>
+            <span>•</span>
+            <span>Last Updated: {new Date().toLocaleTimeString()}</span>
+          </div>
+          
+          <div class="flex items-center space-x-2">
+            <button 
+              on:click={refreshModels}
+              disabled={loadingModels}
+              class="inline-flex items-center px-3 py-1 text-xs font-medium text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 border border-gray-300 dark:border-gray-600 rounded hover:border-gray-400 dark:hover:border-gray-500 transition-colors disabled:opacity-50"
+            >
+              <svg class={`w-3 h-3 mr-1 ${loadingModels ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+              </svg>
+              Refresh
+            </button>
+            
+            <a href="/settings" class="inline-flex items-center px-3 py-1 text-xs font-medium text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300 border border-primary-300 hover:border-primary-400 rounded transition-colors">
+              <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+              </svg>
+              Model Settings
+            </a>
           </div>
         </div>
       </div>

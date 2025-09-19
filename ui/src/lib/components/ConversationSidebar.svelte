@@ -5,12 +5,9 @@
     Trash2, 
     Edit3, 
     Check, 
-    X, 
-    Download, 
-    Upload,
+    X,
     Search,
-    Calendar,
-    MoreVertical
+    Calendar
   } from 'lucide-svelte';
   import { conversations, currentConversationId } from '$lib/stores/conversations.js';
   import { createEventDispatcher, onMount } from 'svelte';
@@ -21,7 +18,6 @@
   let editingConversationId = null;
   let editingTitle = '';
   let showDeleteConfirm = null;
-  let fileInput;
   
   // Filter conversations based on search term
   $: filteredConversations = $conversations.filter(conv => 
@@ -113,38 +109,6 @@
     }
   }
 
-  function exportConversations() {
-    const data = conversations.exportConversations();
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `ai-conversations-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function importConversations() {
-    fileInput.click();
-  }
-
-  function handleFileImport(event) {
-    const file = event.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const success = conversations.importConversations(e.target.result);
-        if (success) {
-          dispatch('showNotification', { type: 'success', message: 'Conversations imported successfully!' });
-        } else {
-          dispatch('showNotification', { type: 'error', message: 'Failed to import conversations. Please check the file format.' });
-        }
-      };
-      reader.readAsText(file);
-    }
-    // Reset file input
-    event.target.value = '';
-  }
 
   function handleKeyDown(event) {
     if (event.key === 'Enter') {
@@ -339,29 +303,9 @@
     {/if}
   </div>
 
-  <!-- Footer Actions -->
+  <!-- Footer Stats -->
   <div class="flex-shrink-0 p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-    <div class="flex items-center space-x-2">
-      <button
-        on:click={exportConversations}
-        class="flex-1 flex items-center justify-center px-3 py-2 text-xs bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600 rounded-lg transition-colors"
-        title="Export all conversations"
-      >
-        <Download size={14} class="mr-1" />
-        Export
-      </button>
-      
-      <button
-        on:click={importConversations}
-        class="flex-1 flex items-center justify-center px-3 py-2 text-xs bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600 rounded-lg transition-colors"
-        title="Import conversations"
-      >
-        <Upload size={14} class="mr-1" />
-        Import
-      </button>
-    </div>
-    
-    <div class="mt-2 text-center">
+    <div class="text-center">
       <p class="text-xs text-gray-500 dark:text-gray-400">
         {$conversations.length} conversation{$conversations.length !== 1 ? 's' : ''}
         {#if $currentConversationId}
@@ -382,14 +326,6 @@
   </div>
 </div>
 
-<!-- Hidden file input for import -->
-<input
-  bind:this={fileInput}
-  type="file"
-  accept=".json"
-  on:change={handleFileImport}
-  class="hidden"
-/>
 
 <style>
   /* Smooth scrollbar */
