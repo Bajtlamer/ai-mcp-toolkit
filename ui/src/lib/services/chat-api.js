@@ -1,7 +1,8 @@
 // Chat API service for communicating with the MCP server
 export class ChatAPI {
   constructor() {
-    this.baseUrl = 'http://localhost:8000';
+    // Use relative URLs to work with any server IP address
+    this.baseUrl = '';
     this.conversationContexts = new Map(); // Track conversation context
   }
 
@@ -10,31 +11,20 @@ export class ChatAPI {
    */
   async sendMessage(message, conversationId, conversationHistory = []) {
     try {
-      // Build context from conversation history (last 20 messages for efficiency)
-      const recentHistory = conversationHistory.slice(-20);
-      const context = this.buildContextPrompt(recentHistory);
-      
-      // Prepare the prompt with context and markdown instruction
+      // Add markdown instruction to the message
       const markdownInstruction = "Please format your response using proper markdown syntax. Use \`\`\`language for code blocks, \`code\` for inline code, **bold** for emphasis, and proper headings with #.";
-      const promptWithContext = context ? 
-        `${context}\n\nHuman: ${message}\n\n${markdownInstruction}\n\nAssistant:` : 
-        `Human: ${message}\n\n${markdownInstruction}\n\nAssistant:`;
-
-      // Send request to MCP server's chat endpoint
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      const messageWithInstruction = `${message}\n\n${markdownInstruction}`;
+      
+      // Use the new conversation API endpoint that handles context properly
+      const response = await fetch('/api/chat/conversation', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          messages: [
-            {
-              role: 'user',
-              content: promptWithContext
-            }
-          ],
-          stream: false,
-          model: await this.getActiveModel(), // Use the currently loaded model
+          message: messageWithInstruction,
+          conversationHistory: conversationHistory,
+          model: await this.getActiveModel(),
           temperature: 0.7,
           max_tokens: 2000
         }),
@@ -46,99 +36,24 @@ export class ChatAPI {
 
       const data = await response.json();
       
-      // Extract the response content and timing metrics
-      if (data.choices && data.choices.length > 0) {
-        let content = data.choices[0].message.content.trim();
-        const usage = data.usage || {};
-        
+      if (data.success) {
         // Auto-format code blocks if not already formatted
-        content = this.autoFormatCodeBlocks(content);
+        const formattedContent = this.autoFormatCodeBlocks(data.content);
         
-        // Return both content and metrics
         return {
-          content,
-          metrics: {
-            totalTime: usage.total_duration || 0,
-            tokensPerSecond: usage.tokens_per_second || 0,
-            promptTokens: usage.prompt_tokens || 0,
-            completionTokens: usage.completion_tokens || 0,
-            totalTokens: usage.total_tokens || 0,
-            promptEvalDuration: usage.prompt_eval_duration || 0,
-            evalDuration: usage.eval_duration || 0
-          }
+          content: formattedContent,
+          metrics: data.metrics || {}
         };
       } else {
-        throw new Error('No response content received');
+        throw new Error(data.error || 'Failed to get AI response');
       }
 
     } catch (error) {
-      // Fallback to direct Ollama API if MCP server is not available
-      try {
-        return await this.fallbackToOllama(message, conversationHistory);
-      } catch (fallbackError) {
-        throw new Error('Failed to get AI response. Please ensure the MCP server or Ollama is running.');
-      }
+      // Remove the fallback to direct Ollama - always go through server
+      throw new Error(`Failed to get AI response: ${error.message}`);
     }
   }
 
-  /**
-   * Fallback to direct Ollama API
-   */
-  async fallbackToOllama(message, conversationHistory = []) {
-    const recentHistory = conversationHistory.slice(-20);
-    const context = this.buildContextPrompt(recentHistory);
-    
-    const promptWithContext = context ? 
-      `${context}\n\nHuman: ${message}\n\nAssistant:` : 
-      message;
-
-    const response = await fetch('http://localhost:11434/api/generate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: await this.getActiveModel(),
-        prompt: promptWithContext,
-        stream: false,
-        options: {
-          temperature: 0.7,
-          top_p: 0.9,
-          max_tokens: 2000
-        }
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Ollama API error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    let content = data.response || 'No response received';
-    
-    // Auto-format code blocks if not already formatted
-    content = this.autoFormatCodeBlocks(content);
-    
-    // Calculate basic metrics from Ollama response
-    const promptEvalCount = data.prompt_eval_count || 0;
-    const evalCount = data.eval_count || 0;
-    const totalDuration = (data.total_duration || 0) / 1e9; // Convert to seconds
-    const evalDuration = (data.eval_duration || 0) / 1e9;
-    const tokensPerSecond = evalCount / evalDuration || 0;
-    
-    return {
-      content,
-      metrics: {
-        totalTime: totalDuration,
-        tokensPerSecond: Math.round(tokensPerSecond * 100) / 100,
-        promptTokens: promptEvalCount,
-        completionTokens: evalCount,
-        totalTokens: promptEvalCount + evalCount,
-        promptEvalDuration: (data.prompt_eval_duration || 0) / 1e9,
-        evalDuration: evalDuration
-      }
-    };
-  }
 
   /**
    * Build context prompt from conversation history
@@ -260,70 +175,19 @@ export class ChatAPI {
 
   /**
    * Send a streaming message (for future implementation)
+   * Note: Streaming is not yet implemented in the server API
    */
   async sendMessageStream(message, conversationId, onChunk, conversationHistory = []) {
-    try {
-      const recentHistory = conversationHistory.slice(-20);
-      const context = this.buildContextPrompt(recentHistory);
-      
-      const promptWithContext = context ? 
-        `${context}\n\nHuman: ${message}\n\nAssistant:` : 
-        message;
-
-      const response = await fetch('http://localhost:11434/api/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: await this.getActiveModel(),
-          prompt: promptWithContext,
-          stream: true,
-          options: {
-            temperature: 0.7,
-            top_p: 0.9,
-            max_tokens: 2000
-          }
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Streaming API error! status: ${response.status}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let fullResponse = '';
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n').filter(line => line.trim());
-
-          for (const line of lines) {
-            try {
-              const data = JSON.parse(line);
-              if (data.response) {
-                fullResponse += data.response;
-                onChunk(data.response);
-              }
-            } catch (parseError) {
-              // Ignore parsing errors for incomplete JSON
-            }
-          }
-        }
-      } finally {
-        reader.releaseLock();
-      }
-
-      return fullResponse;
-
-    } catch (error) {
-      throw error;
+    // For now, fall back to regular message sending
+    // TODO: Implement streaming in server API
+    const response = await this.sendMessage(message, conversationId, conversationHistory);
+    
+    // Simulate streaming by calling onChunk with the full response
+    if (onChunk) {
+      onChunk(response.content);
     }
+    
+    return response.content;
   }
 
   /**
@@ -331,7 +195,8 @@ export class ChatAPI {
    */
   async isServerAvailable() {
     try {
-      const response = await fetch(`${this.baseUrl}/health`, {
+      // Check if our backend server is available via the UI API proxy
+      const response = await fetch('/api/gpu/health', {
         method: 'GET',
         signal: AbortSignal.timeout(5000), // 5 second timeout
       });
@@ -342,15 +207,22 @@ export class ChatAPI {
   }
 
   /**
-   * Check if Ollama is available
+   * Check if Ollama is available (via server)
    */
   async isOllamaAvailable() {
     try {
-      const response = await fetch('http://localhost:11434/api/tags', {
+      // Check Ollama availability through our server's GPU health endpoint
+      const response = await fetch('/api/gpu/health', {
         method: 'GET',
         signal: AbortSignal.timeout(5000),
       });
-      return response.ok;
+      
+      if (response.ok) {
+        const data = await response.json();
+        // If we get a response with model info, Ollama is working
+        return data.ollama_model || false;
+      }
+      return false;
     } catch (error) {
       return false;
     }
@@ -361,9 +233,8 @@ export class ChatAPI {
    */
   async getActiveModel() {
     try {
-      // Try to get model from our GPU health API first
-      const url = typeof window !== 'undefined' ? '/api/gpu/health' : 'http://localhost:5173/api/gpu/health';
-      const response = await fetch(url, {
+      // Get model from our server's GPU health API
+      const response = await fetch('/api/gpu/health', {
         method: 'GET',
         signal: AbortSignal.timeout(5000),
       });
@@ -375,28 +246,10 @@ export class ChatAPI {
         }
       }
     } catch (error) {
-      // Silently fallback to direct Ollama API
+      // Silently fallback to default
     }
     
-    // Fallback to direct Ollama API
-    try {
-      const response = await fetch('http://localhost:11434/api/ps', {
-        method: 'GET',
-        signal: AbortSignal.timeout(5000),
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        // Return the first loaded model, or fall back to a default
-        if (data.models && data.models.length > 0) {
-          return data.models[0].name;
-        }
-      }
-    } catch (error) {
-      // Silently fallback to default model
-    }
-    
-    // Final fallback
+    // Final fallback - use the default model from configuration
     return 'qwen2.5:14b';
   }
 
@@ -405,9 +258,8 @@ export class ChatAPI {
    */
   async getActiveModelInfo() {
     try {
-      // Try to get model info from our GPU health API first
-      const url = typeof window !== 'undefined' ? '/api/gpu/health' : 'http://localhost:5173/api/gpu/health';
-      const response = await fetch(url, {
+      // Get model info from our server's GPU health API
+      const response = await fetch('/api/gpu/health', {
         method: 'GET',
         signal: AbortSignal.timeout(5000),
       });
@@ -425,33 +277,10 @@ export class ChatAPI {
         }
       }
     } catch (error) {
-      // Silently fallback to direct Ollama API
+      // Silently fallback to default
     }
     
-    // Fallback to direct Ollama API
-    try {
-      const response = await fetch('http://localhost:11434/api/ps', {
-        method: 'GET',
-        signal: AbortSignal.timeout(5000),
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.models && data.models.length > 0) {
-          const model = data.models[0];
-          return {
-            name: model.name,
-            size: model.size,
-            processor: model.processor || 'Unknown',
-            context: model.context || 0,
-            id: model.name // For display purposes
-          };
-        }
-      }
-    } catch (error) {
-      // Silently fallback to default model info
-    }
-    
+    // Fallback to default model info
     return {
       name: 'qwen2.5:14b',
       size: 'Unknown',
@@ -487,7 +316,9 @@ export class ChatAPI {
    */
   async processWithTool(toolName, text) {
     try {
-      const response = await fetch(`${this.baseUrl}/tools/execute`, {
+      // Use relative URL to work with any server IP address
+      // This will be proxied to the backend server
+      const response = await fetch('/api/tools/execute', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
