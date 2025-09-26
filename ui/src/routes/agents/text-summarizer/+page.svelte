@@ -52,7 +52,7 @@
         args.url = inputUrl;
       }
       
-      const response = await fetch('http://localhost:8000/tools/execute', {
+      const response = await fetch('/api/tools/execute', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

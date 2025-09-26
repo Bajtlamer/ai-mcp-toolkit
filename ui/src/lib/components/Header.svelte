@@ -55,9 +55,10 @@
   // Check server status periodically
   async function checkServerStatus() {
     try {
-      // Point to the actual MCP server running on port 8000
-      const response = await fetch('http://localhost:8000/health');
-      serverStatus = response.ok ? 'connected' : 'disconnected';
+      // Use SvelteKit server route instead of direct API call
+      const response = await fetch('/api/gpu/health');
+      const data = await response.json();
+      serverStatus = response.ok && data.gpu_available ? 'connected' : 'disconnected';
     } catch (error) {
       serverStatus = 'disconnected';
     }

@@ -27,7 +27,10 @@ export async function GET() {
 					if (parts.length >= 4) {
 						ollamaModel = parts[0];
 						ollamaMemory = parts[2];
-						ollamaAccelerated = parts[3].includes('GPU') || parts[3].includes('%');
+						// Check if GPU is being used - parse the full processor field
+						// Format can be "100% GPU" or "CPU/GPU" or just "GPU"
+						const processorInfo = parts.slice(3).join(' ');
+						ollamaAccelerated = processorInfo.includes('GPU');
 					}
 				}
 			}

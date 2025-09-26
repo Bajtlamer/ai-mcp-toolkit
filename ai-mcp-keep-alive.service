@@ -1,0 +1,25 @@
+[Unit]
+Description=AI MCP Toolkit Model Keep-Alive Service
+After=network.target ollama.service
+Wants=ollama.service
+StartLimitInterval=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=roza
+Group=roza
+WorkingDirectory=/home/roza/ai-mcp-toolkit
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/bash /home/roza/ai-mcp-toolkit/keep_model_warm.sh
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+# Ensure service restarts after suspend/resume
+TimeoutStopSec=10
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target
