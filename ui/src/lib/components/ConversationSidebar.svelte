@@ -7,7 +7,8 @@
     Check, 
     X,
     Search,
-    Calendar
+    Calendar,
+    AlertTriangle
   } from 'lucide-svelte';
   import { conversations, currentConversationId } from '$lib/stores/conversations.js';
   import { createEventDispatcher, onMount } from 'svelte';
@@ -18,6 +19,7 @@
   let editingConversationId = null;
   let editingTitle = '';
   let showDeleteConfirm = null;
+  let showClearAllConfirm = false;
   
   // Filter conversations based on search term
   $: filteredConversations = $conversations.filter(conv => 
@@ -109,6 +111,16 @@
     }
   }
 
+  function clearAllConversations() {
+    conversations.clearAll();
+    showClearAllConfirm = false;
+    dispatch('conversationChanged');
+    dispatch('showNotification', { 
+      type: 'success', 
+      message: 'All conversations have been cleared!' 
+    });
+  }
+
 
   function handleKeyDown(event) {
     if (event.key === 'Enter') {
@@ -139,13 +151,24 @@
   <div class="flex-shrink-0 p-4 border-b border-gray-200 dark:border-gray-700">
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Conversations</h2>
-      <button
-        on:click={createNewConversation}
-        class="flex items-center justify-center w-9 h-9 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm hover:shadow-md"
-        title="New conversation"
-      >
-        <Plus size={18} />
-      </button>
+      <div class="flex items-center space-x-2">
+        {#if $conversations.length > 1}
+          <button
+            on:click={() => showClearAllConfirm = true}
+            class="flex items-center justify-center w-9 h-9 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors shadow-sm hover:shadow-md"
+            title="Clear all conversations"
+          >
+            <Trash2 size={16} />
+          </button>
+        {/if}
+        <button
+          on:click={createNewConversation}
+          class="flex items-center justify-center w-9 h-9 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm hover:shadow-md"
+          title="New conversation"
+        >
+          <Plus size={18} />
+        </button>
+      </div>
     </div>
     
     <!-- Search -->
@@ -326,6 +349,56 @@
   </div>
 </div>
 
+<!-- Clear All Confirmation Modal -->
+{#if showClearAllConfirm}
+  <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+      <!-- Background overlay -->
+      <div 
+        class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" 
+        on:click={() => showClearAllConfirm = false}
+      ></div>
+
+      <!-- Modal panel -->
+      <div class="relative inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
+        <div class="sm:flex sm:items-start">
+          <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900/30 sm:mx-0 sm:h-10 sm:w-10">
+            <AlertTriangle class="h-6 w-6 text-red-600 dark:text-red-400" />
+          </div>
+          <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+            <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white" id="modal-title">
+              Clear All Conversations
+            </h3>
+            <div class="mt-2">
+              <p class="text-sm text-gray-500 dark:text-gray-400">
+                Are you sure you want to delete all conversations? This action cannot be undone and will permanently remove all your chat history.
+              </p>
+              <p class="text-sm text-gray-500 dark:text-gray-400 mt-2 font-medium">
+                Total conversations: {$conversations.length}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+          <button
+            type="button"
+            class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm transition-colors"
+            on:click={clearAllConversations}
+          >
+            Clear All
+          </button>
+          <button
+            type="button"
+            class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-700 text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:w-auto sm:text-sm transition-colors"
+            on:click={() => showClearAllConfirm = false}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   /* Smooth scrollbar */
