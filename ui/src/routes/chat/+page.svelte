@@ -432,7 +432,7 @@
           class="min-h-full flex flex-col"
         >
           <!-- Messages Area -->
-          <div class="flex-1 px-6 py-6 space-y-6">
+          <div class="flex-1 px-6 py-6 space-y-4">
             {#if currentMessages.length === 0}
               <!-- Welcome Screen -->
               <div class="text-center py-12">
@@ -488,7 +488,7 @@
                 <div class="message-container animate-fadeIn">
                   {#if message.type === 'assistant'}
                     <!-- AI Message -->
-                    <div class="w-full py-6">
+                    <div class="w-full py-2">
                       <div class="flex items-start space-x-4">
                         <div class="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center">
                           <Bot size={16} class="text-white" />
@@ -534,7 +534,7 @@
                     </div>
                   {:else}
                     <!-- User Message -->
-                    <div class="w-full py-6">
+                    <div class="w-full py-2">
                       <div class="flex items-start space-x-4 justify-end">
                         <div class="flex-1 flex flex-col items-end">
                           <div class="flex items-center space-x-2 mb-3">
