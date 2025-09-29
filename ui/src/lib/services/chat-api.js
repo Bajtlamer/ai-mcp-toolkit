@@ -220,7 +220,7 @@ export class ChatAPI {
       if (response.ok) {
         const data = await response.json();
         // If we get a response with model info, Ollama is working
-        return data.ollama_model || false;
+        return data.ollama_model && data.ollama_model !== 'None';
       }
       return false;
     } catch (error) {
@@ -241,7 +241,7 @@ export class ChatAPI {
       
       if (response.ok) {
         const data = await response.json();
-        if (data.ollama_model) {
+        if (data.ollama_model && data.ollama_model !== 'None') {
           return data.ollama_model;
         }
       }
@@ -249,8 +249,8 @@ export class ChatAPI {
       // Silently fallback to default
     }
     
-    // Final fallback - use the default model from configuration
-    return 'qwen2.5:14b';
+    // Final fallback - use a generic name since we couldn't detect the model
+    return 'AI Assistant';
   }
 
   /**
@@ -266,7 +266,7 @@ export class ChatAPI {
       
       if (response.ok) {
         const data = await response.json();
-        if (data.ollama_model) {
+        if (data.ollama_model && data.ollama_model !== 'None') {
           return {
             name: data.ollama_model,
             size: 'Unknown',
@@ -280,13 +280,13 @@ export class ChatAPI {
       // Silently fallback to default
     }
     
-    // Fallback to default model info
+    // Fallback to generic model info when we can't detect the actual model
     return {
-      name: 'qwen2.5:14b',
+      name: 'AI Assistant',
       size: 'Unknown',
       processor: 'Unknown',
       context: 4096,
-      id: 'qwen2.5:14b'
+      id: 'unknown'
     };
   }
 
