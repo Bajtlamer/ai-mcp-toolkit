@@ -635,8 +635,8 @@
                                 </div>
                               </div>
                               
-                              <!-- Message Actions -->
-                              <div class="absolute top-0 left-0 -ml-12 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <!-- Message Actions - positioned below the message -->
+                              <div class="flex justify-end mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <div class="flex items-center space-x-1">
                                   <button
                                     on:click={() => copyMessage(message.content)}
