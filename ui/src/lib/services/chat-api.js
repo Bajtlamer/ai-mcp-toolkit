@@ -9,7 +9,7 @@ export class ChatAPI {
   /**
    * Send a chat message to the AI model with conversation context
    */
-  async sendMessage(message, conversationId, conversationHistory = []) {
+  async sendMessage(message, conversationId, conversationHistory = [], abortSignal = null) {
     try {
       // Add markdown instruction to the message
       const markdownInstruction = "Please format your response using proper markdown syntax. Use \`\`\`language for code blocks, \`code\` for inline code, **bold** for emphasis, and proper headings with #.";
@@ -28,6 +28,7 @@ export class ChatAPI {
           temperature: 0.7,
           max_tokens: 2000
         }),
+        signal: abortSignal // Add abort signal support
       });
 
       if (!response.ok) {
@@ -49,7 +50,12 @@ export class ChatAPI {
       }
 
     } catch (error) {
-      // Remove the fallback to direct Ollama - always go through server
+      // Re-throw AbortError as-is so it can be properly handled
+      if (error.name === 'AbortError') {
+        throw error;
+      }
+      
+      // For other errors, wrap with context
       throw new Error(`Failed to get AI response: ${error.message}`);
     }
   }

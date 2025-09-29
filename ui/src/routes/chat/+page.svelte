@@ -14,7 +14,8 @@
     AlertTriangle,
     Wifi,
     WifiOff,
-    Download
+    Download,
+    Square
   } from 'lucide-svelte';
   
   import ConversationSidebar from '$lib/components/ConversationSidebar.svelte';
@@ -31,6 +32,7 @@
   let editingText = '';
   let regeneratingMessageId = null;
   let notification = null;
+  let currentAbortController = null; // For canceling requests
 
   // Reactive current conversation and messages
   $: currentMessages = $currentConversation?.messages || [];
@@ -117,6 +119,9 @@
     inputText = '';
     error = null;
 
+    // Create abort controller for cancellation
+    currentAbortController = new AbortController();
+
     // Add user message
     const userMessage = {
       type: 'user',
@@ -135,7 +140,8 @@
       const response = await chatAPI.sendMessage(
         messageContent, 
         $currentConversation.id, 
-        $currentConversation.messages
+        $currentConversation.messages,
+        currentAbortController.signal
       );
       
       // Calculate actual thinking time (response time)
@@ -161,9 +167,28 @@
       conversations.addMessage($currentConversation.id, assistantMessage);
       conversations.addThinkingTime($currentConversation.id, thinkingTime);
     } catch (err) {
-      error = err.message || 'Failed to get AI response';
+      if (err.name === 'AbortError') {
+        // Mark the last user message as cancelled
+        conversations.update(convs => 
+          convs.map(conv => {
+            if (conv.id === $currentConversation.id && conv.messages.length > 0) {
+              const messages = [...conv.messages];
+              const lastMessage = messages[messages.length - 1];
+              if (lastMessage.type === 'user') {
+                messages[messages.length - 1] = { ...lastMessage, cancelled: true };
+              }
+              return { ...conv, messages };
+            }
+            return conv;
+          })
+        );
+        showNotification('success', 'Request cancelled successfully');
+      } else {
+        error = err.message || 'Failed to get AI response';
+      }
     } finally {
       conversations.setConversationLoading($currentConversation.id, false);
+      currentAbortController = null; // Clear the abort controller
     }
   }
 
@@ -186,6 +211,9 @@
     regeneratingMessageId = lastUserMessage.id;
     conversations.setConversationLoading($currentConversation.id, true);
     
+    // Create abort controller for cancellation
+    currentAbortController = new AbortController();
+    
     try {
       // Track thinking time for regeneration
       const startTime = Date.now();
@@ -193,7 +221,8 @@
       const response = await chatAPI.sendMessage(
         lastUserMessage.content,
         $currentConversation.id,
-        messagesWithoutLast
+        messagesWithoutLast,
+        currentAbortController.signal
       );
       
       // Calculate thinking time
@@ -221,10 +250,29 @@
       // Track thinking time for this conversation
       conversations.addThinkingTime($currentConversation.id, thinkingTime);
     } catch (err) {
-      error = err.message || 'Failed to regenerate response';
+      if (err.name === 'AbortError') {
+        // Mark the regenerating message as cancelled
+        conversations.update(convs => 
+          convs.map(conv => {
+            if (conv.id === $currentConversation.id) {
+              const messages = conv.messages.map(msg => 
+                msg.id === regeneratingMessageId 
+                  ? { ...msg, cancelled: true }
+                  : msg
+              );
+              return { ...conv, messages };
+            }
+            return conv;
+          })
+        );
+        showNotification('success', 'Request cancelled successfully');
+      } else {
+        error = err.message || 'Failed to regenerate response';
+      }
     } finally {
       regeneratingMessageId = null;
       conversations.setConversationLoading($currentConversation.id, false);
+      currentAbortController = null; // Clear the abort controller
     }
   }
 
@@ -261,6 +309,13 @@
   function cancelMessageEdit() {
     editingMessageId = null;
     editingText = '';
+  }
+  
+  function cancelCurrentRequest() {
+    if (currentAbortController) {
+      currentAbortController.abort();
+      currentAbortController = null;
+    }
   }
 
   function copyMessage(content) {
@@ -543,6 +598,9 @@
                               {#if message.edited}
                                 <span class="ml-1">(edited)</span>
                               {/if}
+                              {#if message.cancelled}
+                                <span class="ml-1 text-orange-600 dark:text-orange-400 font-medium">(cancelled)</span>
+                              {/if}
                             </span>
                             <span class="text-sm font-medium text-gray-900 dark:text-white">You</span>
                           </div>
@@ -571,7 +629,7 @@
                                 </div>
                               </div>
                             {:else}
-                              <div class="bg-blue-600 text-white rounded-3xl px-5 py-3">
+                              <div class="{message.cancelled ? 'bg-gray-400 dark:bg-gray-600' : 'bg-blue-600'} text-white rounded-3xl px-5 py-3 {message.cancelled ? 'opacity-70' : ''}">
                                 <div class="prose prose-sm max-w-none prose-invert">
                                   <pre class="whitespace-pre-wrap font-sans leading-relaxed bg-transparent border-none p-0 m-0">{message.content}</pre>
                                 </div>
@@ -622,13 +680,25 @@
                       </span>
                     </div>
                     <div class="bg-gray-100 dark:bg-gray-800 rounded-2xl px-4 py-3">
-                      <div class="flex items-center space-x-2">
-                        <div class="flex space-x-1">
-                          <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
-                          <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
-                          <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                          <div class="flex space-x-1">
+                            <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+                            <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+                            <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                          </div>
+                          <span class="text-sm text-gray-600 dark:text-gray-400">Thinking...</span>
                         </div>
-                        <span class="text-sm text-gray-600 dark:text-gray-400">Thinking...</span>
+                        <!-- Cancel button -->
+                        {#if currentAbortController}
+                          <button
+                            on:click={cancelCurrentRequest}
+                            class="p-1 text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 transition-colors rounded"
+                            title="Cancel request"
+                          >
+                            <Square size={14} class="fill-current" />
+                          </button>
+                        {/if}
                       </div>
                     </div>
                   </div>
