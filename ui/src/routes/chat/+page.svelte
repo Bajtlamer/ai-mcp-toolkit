@@ -472,7 +472,7 @@
 {/if}
 
 <!-- True 2-Column ChatGPT Layout -->
-<div class="h-full flex bg-white dark:bg-gray-900" style="margin: -1.5rem; height: calc(100vh - 4rem);">
+<div class="h-full flex bg-white dark:bg-gray-900" style="margin: -1.5rem; height: calc(100vh - 6.1rem);">
   <!-- Left Column: Conversation History (30% width) -->
   <div class="{showSidebar ? 'w-[30%]' : 'w-0'} flex-shrink-0 transition-all duration-300 overflow-hidden bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
     <ConversationSidebar 
