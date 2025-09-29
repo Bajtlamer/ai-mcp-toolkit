@@ -529,14 +529,14 @@
     <!-- Chat Content Area (Scrollable) -->
     <div 
       bind:this={chatContainer}
-      class="flex-1 overflow-y-auto"
+      class="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900"
       on:scroll={handleScroll}
     >
       <div class="w-full">
         <!-- Messages and Input Container -->
         <div class="min-h-full flex flex-col">
           <!-- Messages Area -->
-          <div class="flex-1 px-6 py-6 space-y-4">
+          <div class="flex-1 px-6 py-4 space-y-3">
             {#if currentMessages.length === 0}
               <!-- Welcome Screen -->
               <div class="text-center py-12">
@@ -592,7 +592,7 @@
                 <div class="message-container animate-fadeIn">
                   {#if message.type === 'assistant'}
                     <!-- AI Message -->
-                    <div class="w-full py-2">
+                    <div class="w-full py-2 px-4">
                       <div class="flex items-start space-x-4">
                         <div class="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center">
                           <Bot size={16} class="text-white" />
@@ -638,10 +638,29 @@
                     </div>
                   {:else}
                     <!-- User Message -->
-                    <div class="w-full py-2">
-                      <div class="flex items-start space-x-4 justify-end">
+                    <div class="w-full bg-white dark:bg-gray-800 rounded-lg p-3 mx-2">
+                      <div class="flex items-start space-x-2 justify-end">
                         <div class="flex-1 flex flex-col items-end">
                           <div class="flex items-center space-x-2 mb-3">
+                            <!-- Copy and Edit Actions - permanently visible -->
+                            <div class="flex items-center space-x-1 mr-2">
+                              <button
+                                on:click={() => copyMessage(message.content)}
+                                class="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 rounded transition-colors"
+                                title="Copy message"
+                              >
+                                <Copy size={12} />
+                              </button>
+                              
+                              <button
+                                on:click={() => startEditingMessage(message)}
+                                class="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 rounded transition-colors"
+                                title="Edit message"
+                              >
+                                <Edit3 size={12} />
+                              </button>
+                            </div>
+                            
                             <span class="text-xs text-gray-500 dark:text-gray-400">
                               {formatTimestamp(message.timestamp)}
                               {#if message.edited}
@@ -654,7 +673,7 @@
                             <span class="text-sm font-medium text-gray-900 dark:text-white">You</span>
                           </div>
                           
-                          <div class="relative group max-w-[80%]">
+                          <div class="relative group max-w-[98%]">
                             {#if editingMessageId === message.id}
                               <div class="bg-gray-100 dark:bg-gray-700 rounded-2xl p-4 w-full">
                                 <textarea
@@ -678,30 +697,9 @@
                                 </div>
                               </div>
                             {:else}
-                              <div class="{message.cancelled ? 'bg-gray-400 dark:bg-gray-600' : 'bg-blue-600'} text-white rounded-3xl px-5 py-3 {message.cancelled ? 'opacity-70' : ''}">
-                                <div class="prose prose-sm max-w-none prose-invert">
+                              <div class="{message.cancelled ? 'bg-gray-400 dark:bg-gray-600 text-white' : 'text-gray-900 dark:text-white'} rounded-3xl px-5 py-3 {message.cancelled ? 'opacity-70' : ''}">
+                                <div class="prose prose-sm max-w-none {message.cancelled ? 'prose-invert' : 'prose-gray dark:prose-invert'}">
                                   <pre class="whitespace-pre-wrap font-sans leading-relaxed bg-transparent border-none p-0 m-0">{message.content}</pre>
-                                </div>
-                              </div>
-                              
-                              <!-- Message Actions - positioned below the message -->
-                              <div class="flex justify-end mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <div class="flex items-center space-x-1">
-                                  <button
-                                    on:click={() => copyMessage(message.content)}
-                                    class="p-1.5 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-md transition-colors border border-gray-200 dark:border-gray-600 shadow-sm"
-                                    title="Copy message"
-                                  >
-                                    <Copy size={12} class="text-gray-600 dark:text-gray-300" />
-                                  </button>
-                                  
-                                  <button
-                                    on:click={() => startEditingMessage(message)}
-                                    class="p-1.5 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-md transition-colors border border-gray-200 dark:border-gray-600 shadow-sm"
-                                    title="Edit message"
-                                  >
-                                    <Edit3 size={12} class="text-gray-600 dark:text-gray-300" />
-                                  </button>
                                 </div>
                               </div>
                             {/if}
@@ -773,7 +771,7 @@
           </div>
           
           <!-- Input Area (Following the conversation) -->
-          <div class="px-6 py-6 border-t border-gray-200 dark:border-gray-700">
+          <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
             <div class="relative">
               <textarea
                 bind:value={inputText}
