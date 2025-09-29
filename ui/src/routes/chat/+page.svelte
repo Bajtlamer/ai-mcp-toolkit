@@ -39,11 +39,46 @@
   $: isLoading = $currentConversation?.isLoading || false;
 
   // Auto-scroll to bottom when new messages arrive
-  afterUpdate(() => {
-    if (chatContainer) {
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-  });
+  let shouldAutoScroll = true;
+  let lastMessageCount = 0;
+  
+  // Function to scroll to bottom
+  function scrollToBottom(force = false) {
+    if (!chatContainer) return;
+    
+    // Check if user has scrolled up manually (unless forced)
+    if (!force && !shouldAutoScroll) return;
+    
+    // Use requestAnimationFrame to ensure DOM is updated
+    requestAnimationFrame(() => {
+      if (chatContainer) {
+        chatContainer.scrollTo({
+          top: chatContainer.scrollHeight,
+          behavior: 'smooth'
+        });
+      }
+    });
+  }
+  
+  // Check if user has scrolled away from bottom
+  function handleScroll() {
+    if (!chatContainer) return;
+    
+    const { scrollTop, scrollHeight, clientHeight } = chatContainer;
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 50; // 50px threshold
+    shouldAutoScroll = isAtBottom;
+  }
+  
+  // Auto-scroll when messages change
+  $: if (currentMessages.length !== lastMessageCount) {
+    lastMessageCount = currentMessages.length;
+    tick().then(() => scrollToBottom(true)); // Force scroll on new messages
+  }
+  
+  // Auto-scroll when loading state changes (for typing indicators)
+  $: if (isLoading !== undefined) {
+    tick().then(() => scrollToBottom());
+  }
 
   onMount(async () => {
     // Handle responsive sidebar visibility
@@ -131,6 +166,9 @@
     
     conversations.addMessage($currentConversation.id, userMessage);
     conversations.setConversationLoading($currentConversation.id, true);
+    
+    // Ensure scroll to bottom after user message is added
+    tick().then(() => scrollToBottom(true));
 
     try {
       // Track thinking time
@@ -166,6 +204,9 @@
       
       conversations.addMessage($currentConversation.id, assistantMessage);
       conversations.addThinkingTime($currentConversation.id, thinkingTime);
+      
+      // Ensure scroll to bottom after assistant response
+      tick().then(() => scrollToBottom(true));
     } catch (err) {
       if (err.name === 'AbortError') {
         // Mark the last user message as cancelled
@@ -249,6 +290,9 @@
       
       // Track thinking time for this conversation
       conversations.addThinkingTime($currentConversation.id, thinkingTime);
+      
+      // Ensure scroll to bottom after regenerated response
+      tick().then(() => scrollToBottom(true));
     } catch (err) {
       if (err.name === 'AbortError') {
         // Mark the regenerating message as cancelled
@@ -382,6 +426,10 @@
     editingText = '';
     regeneratingMessageId = null;
     error = null;
+    
+    // Reset auto-scroll behavior and scroll to bottom
+    shouldAutoScroll = true;
+    tick().then(() => scrollToBottom(true));
   }
 
   function showNotification(type, message) {
@@ -479,13 +527,14 @@
     </div>
 
     <!-- Chat Content Area (Scrollable) -->
-    <div class="flex-1 overflow-y-auto">
+    <div 
+      bind:this={chatContainer}
+      class="flex-1 overflow-y-auto"
+      on:scroll={handleScroll}
+    >
       <div class="w-full">
         <!-- Messages and Input Container -->
-        <div 
-          bind:this={chatContainer}
-          class="min-h-full flex flex-col"
-        >
+        <div class="min-h-full flex flex-col">
           <!-- Messages Area -->
           <div class="flex-1 px-6 py-6 space-y-4">
             {#if currentMessages.length === 0}
