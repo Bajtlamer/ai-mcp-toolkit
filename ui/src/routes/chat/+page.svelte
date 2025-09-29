@@ -638,28 +638,11 @@
                     </div>
                   {:else}
                     <!-- User Message -->
-                    <div class="w-full bg-white dark:bg-gray-800 rounded-lg p-3 mx-2">
-                      <div class="flex items-start space-x-2 justify-end">
-                        <div class="flex-1 flex flex-col items-end">
-                          <div class="flex items-center space-x-2 mb-3">
-                            <!-- Copy and Edit Actions - permanently visible -->
-                            <div class="flex items-center space-x-1 mr-2">
-                              <button
-                                on:click={() => copyMessage(message.content)}
-                                class="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 rounded transition-colors"
-                                title="Copy message"
-                              >
-                                <Copy size={12} />
-                              </button>
-                              
-                              <button
-                                on:click={() => startEditingMessage(message)}
-                                class="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 rounded transition-colors"
-                                title="Edit message"
-                              >
-                                <Edit3 size={12} />
-                              </button>
-                            </div>
+                    <div class="w-full flex justify-end px-2">
+                      <div class="bg-gray-200 dark:bg-gray-800 rounded-lg p-3 max-w-fit min-w-[100px] max-w-[80%]">
+                        <div class="flex flex-col items-end">
+                          <div class="flex items-center space-x-2 mb-3 w-full justify-end">
+                            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">You</span>
                             
                             <span class="text-xs text-gray-500 dark:text-gray-400">
                               {formatTimestamp(message.timestamp)}
@@ -670,10 +653,28 @@
                                 <span class="ml-1 text-orange-600 dark:text-orange-400 font-medium">(cancelled)</span>
                               {/if}
                             </span>
-                            <span class="text-sm font-medium text-gray-900 dark:text-white">You</span>
+                            
+                            <!-- Copy and Edit Actions - permanently visible -->
+                            <div class="flex items-center space-x-1 ml-2">
+                              <button
+                                on:click={() => copyMessage(message.content)}
+                                class="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200 rounded transition-colors"
+                                title="Copy message"
+                              >
+                                <Copy size={12} />
+                              </button>
+                              
+                              <button
+                                on:click={() => startEditingMessage(message)}
+                                class="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200 rounded transition-colors"
+                                title="Edit message"
+                              >
+                                <Edit3 size={12} />
+                              </button>
+                            </div>
                           </div>
                           
-                          <div class="relative group max-w-[98%]">
+                          <div class="relative group w-full">
                             {#if editingMessageId === message.id}
                               <div class="bg-gray-100 dark:bg-gray-700 rounded-2xl p-4 w-full">
                                 <textarea
@@ -704,9 +705,6 @@
                               </div>
                             {/if}
                           </div>
-                        </div>
-                        <div class="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
-                          <User size={16} class="text-white" />
                         </div>
                       </div>
                     </div>
