@@ -7,7 +7,6 @@
     User, 
     Copy, 
     RotateCcw, 
-    Edit3, 
     Check, 
     X,
     Sidebar,
@@ -28,8 +27,6 @@
   let error = null;
   let serverStatus = { mcp: false, ollama: false, canChat: false };
   let showSidebar = false; // Start with sidebar closed on mobile, open on desktop
-  let editingMessageId = null;
-  let editingText = '';
   let regeneratingMessageId = null;
   let notification = null;
   let currentAbortController = null; // For canceling requests
@@ -320,40 +317,6 @@
     }
   }
 
-  function startEditingMessage(message) {
-    editingMessageId = message.id;
-    editingText = message.content;
-  }
-
-  function saveMessageEdit() {
-    if (!editingText.trim()) {
-      cancelMessageEdit();
-      return;
-    }
-    
-    conversations.update(convs =>
-      convs.map(conv =>
-        conv.id === $currentConversation.id
-          ? {
-              ...conv,
-              messages: conv.messages.map(msg =>
-                msg.id === editingMessageId
-                  ? { ...msg, content: editingText.trim(), edited: true }
-                  : msg
-              )
-            }
-          : conv
-      )
-    );
-    
-    editingMessageId = null;
-    editingText = '';
-  }
-
-  function cancelMessageEdit() {
-    editingMessageId = null;
-    editingText = '';
-  }
   
   function cancelCurrentRequest() {
     if (currentAbortController) {
@@ -421,9 +384,7 @@
   }
 
   function onConversationChanged() {
-    // Clear any editing state when switching conversations
-    editingMessageId = null;
-    editingText = '';
+    // Clear any state when switching conversations
     regeneratingMessageId = null;
     error = null;
     
@@ -654,56 +615,22 @@
                               {/if}
                             </span>
                             
-                            <!-- Copy and Edit Actions - permanently visible -->
-                            <div class="flex items-center space-x-1 ml-2">
-                              <button
-                                on:click={() => copyMessage(message.content)}
-                                class="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200 rounded transition-colors"
-                                title="Copy message"
-                              >
-                                <Copy size={12} />
-                              </button>
-                              
-                              <button
-                                on:click={() => startEditingMessage(message)}
-                                class="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200 rounded transition-colors"
-                                title="Edit message"
-                              >
-                                <Edit3 size={12} />
-                              </button>
-                            </div>
+                            <!-- Copy Action - permanently visible -->
+                            <button
+                              on:click={() => copyMessage(message.content)}
+                              class="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200 rounded transition-colors ml-2"
+                              title="Copy message"
+                            >
+                              <Copy size={12} />
+                            </button>
                           </div>
                           
-                          <div class="relative group w-full">
-                            {#if editingMessageId === message.id}
-                              <div class="bg-gray-100 dark:bg-gray-700 rounded-2xl p-4 w-full">
-                                <textarea
-                                  bind:value={editingText}
-                                  class="w-full resize-none bg-transparent text-gray-900 dark:text-white focus:outline-none"
-                                  rows="3"
-                                ></textarea>
-                                <div class="flex justify-end space-x-2 mt-3">
-                                  <button
-                                    on:click={cancelMessageEdit}
-                                    class="px-3 py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
-                                  >
-                                    Cancel
-                                  </button>
-                                  <button
-                                    on:click={saveMessageEdit}
-                                    class="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-                                  >
-                                    Save
-                                  </button>
-                                </div>
+                          <div class="w-full">
+                            <div class="{message.cancelled ? 'bg-gray-400 dark:bg-gray-600 text-white' : 'text-gray-900 dark:text-white'} rounded-3xl px-5 py-3 {message.cancelled ? 'opacity-70' : ''}">
+                              <div class="prose prose-gray dark:prose-invert max-w-none">
+                                <pre class="whitespace-pre-wrap font-sans leading-relaxed bg-transparent border-none p-0 m-0 text-gray-800 dark:text-gray-200">{message.content}</pre>
                               </div>
-                            {:else}
-                              <div class="{message.cancelled ? 'bg-gray-400 dark:bg-gray-600 text-white' : 'text-gray-900 dark:text-white'} rounded-3xl px-5 py-3 {message.cancelled ? 'opacity-70' : ''}">
-                                <div class="prose prose-sm max-w-none {message.cancelled ? 'prose-invert' : 'prose-gray dark:prose-invert'}">
-                                  <pre class="whitespace-pre-wrap font-sans leading-relaxed bg-transparent border-none p-0 m-0">{message.content}</pre>
-                                </div>
-                              </div>
-                            {/if}
+                            </div>
                           </div>
                         </div>
                       </div>
