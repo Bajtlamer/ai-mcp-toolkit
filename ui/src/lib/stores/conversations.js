@@ -24,7 +24,7 @@ function generateTitle(firstMessage) {
 const createWelcomeMessage = () => ({
   id: generateId(),
   type: 'assistant',
-  content: "Hello! I'm your AI assistant. I can help you with a wide variety of tasks including:\n\n• **General conversation** - Ask me anything!\n• **Text processing** - Clean, analyze, or transform text\n• **Code assistance** - Help with programming questions\n• **Creative tasks** - Writing, brainstorming, and more\n• **Analysis** - Data interpretation, sentiment analysis\n\nWhat would you like to explore today?",
+  content: "What can I do for you today?",
   timestamp: new Date(),
   isLoading: false
 });

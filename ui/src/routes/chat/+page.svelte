@@ -264,8 +264,45 @@
   }
 
   function copyMessage(content) {
-    navigator.clipboard.writeText(content);
-    showNotification('success', 'Message copied to clipboard!');
+    // Modern clipboard API with fallback for remote computers
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(content)
+        .then(() => {
+          showNotification('success', 'Message copied to clipboard!');
+        })
+        .catch(() => {
+          // Fallback to execCommand for remote computers
+          fallbackCopyToClipboard(content);
+        });
+    } else {
+      // Fallback for browsers without clipboard API or insecure contexts
+      fallbackCopyToClipboard(content);
+    }
+  }
+  
+  // Fallback copy function for older browsers or insecure contexts
+  function fallbackCopyToClipboard(text) {
+    try {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      
+      if (successful) {
+        showNotification('success', 'Message copied to clipboard!');
+      } else {
+        showNotification('error', 'Copy failed - please select and copy manually');
+      }
+    } catch (err) {
+      showNotification('error', 'Copy failed - please select and copy manually');
+    }
   }
 
   function exportCurrentConversation() {

@@ -179,23 +179,74 @@
     // Initialize marked with our custom renderer
     setupMarked();
     
-    // Simple copy function
+    // Enhanced copy function with fallback for remote computers
     window.copyCode = function(button) {
       try {
         const codeBlock = button.closest('.code-block').querySelector('code');
         const text = codeBlock.textContent || codeBlock.innerText;
         
-        navigator.clipboard.writeText(text).then(() => {
-          button.style.color = '#10b981';
-          setTimeout(() => {
-            button.style.color = '';
-          }, 1000);
-        }).catch(err => {
-          // Silently handle copy failure
-        });
+        // Modern clipboard API with fallback
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(() => {
+            showCopySuccess(button);
+          }).catch(err => {
+            // Fallback to execCommand for remote computers
+            fallbackCopyToClipboard(text, button);
+          });
+        } else {
+          // Fallback for browsers without clipboard API or insecure contexts
+          fallbackCopyToClipboard(text, button);
+        }
       } catch (err) {
-        // Silently handle copy error
+        console.warn('Copy failed:', err);
       }
+    };
+    
+    // Fallback copy function for older browsers or insecure contexts
+    function fallbackCopyToClipboard(text, button) {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        
+        if (successful) {
+          showCopySuccess(button);
+        } else {
+          showCopyError(button);
+        }
+      } catch (err) {
+        showCopyError(button);
+      }
+    }
+    
+    // Show copy success feedback
+    function showCopySuccess(button) {
+      const originalColor = button.style.color;
+      button.style.color = '#10b981';
+      button.title = 'Copied!';
+      setTimeout(() => {
+        button.style.color = originalColor;
+        button.title = 'Copy code';
+      }, 1500);
+    }
+    
+    // Show copy error feedback
+    function showCopyError(button) {
+      const originalColor = button.style.color;
+      button.style.color = '#ef4444';
+      button.title = 'Copy failed - select text manually';
+      setTimeout(() => {
+        button.style.color = originalColor;
+        button.title = 'Copy code';
+      }, 2000);
     };
   });
   
@@ -251,16 +302,16 @@
     font-size: 1.75rem;
     font-weight: 700;
     margin: 1.5rem 0 1rem 0;
-    border-bottom: 2px solid #e5e7eb;
-    padding-bottom: 0.5rem;
+    /* border-bottom: 2px solid #e5e7eb; */
+    /* padding-bottom: 0.5rem; */
   }
   
   .markdown-content :global(h2) {
     font-size: 1.5rem;
     font-weight: 600;
     margin: 1.25rem 0 0.75rem 0;
-    border-bottom: 1px solid #e5e7eb;
-    padding-bottom: 0.25rem;
+    /* border-bottom: 1px solid #e5e7eb; */
+    /* padding-bottom: 0.25rem; */
   }
   
   .markdown-content :global(h3) {
