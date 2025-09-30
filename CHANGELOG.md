@@ -5,6 +5,69 @@ All notable changes to the AI MCP Toolkit project will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-01-18
+
+### 🚀 Major Features & Enhancements
+
+#### Added
+- **GPU Monitoring Dashboard** - Real-time GPU performance monitoring with web UI
+- **Network Access Support** - Full remote access capability for multi-machine deployment
+- **Enhanced Navigation** - Expandable submenu system with smooth animations
+- **Advanced Text Cleaning** - Improved symbol removal with better default behavior
+- **Cross-Platform Optimization** - Intelligent environment detection and configuration
+
+#### Enhanced
+- **GPU Performance Tracking** - Comprehensive monitoring of NVIDIA RTX 3070 Ti utilization
+- **API Integration** - New endpoints for GPU health, metrics, and recommendations
+- **User Experience** - ChatGPT-like interface with improved conversation management
+- **Text Processing** - Enhanced Text Cleaner with automatic problematic symbol removal
+- **Mobile Responsiveness** - Optimized layouts for all device sizes
+
+#### Fixed
+- **Navigation Issues** - Resolved AI Agents submenu expansion problems
+- **Text Cleaning** - Fixed symbol removal to show visible improvements
+- **Network Deployment** - Resolved localhost dependency issues for remote access
+- **UI Consistency** - Improved visual hierarchy and component interactions
+
+### 🔧 Technical Improvements
+
+#### GPU Acceleration
+- Real-time GPU utilization monitoring (100% utilization achieved)
+- Performance metrics tracking with tokens/second measurement
+- Temperature and memory usage optimization
+- Automated optimization recommendations
+
+#### Network Architecture
+- Server-side API proxy for Ollama integration
+- CORS configuration for cross-origin requests
+- Environment-based host configuration (0.0.0.0 support)
+- Seamless remote access without localhost dependencies
+
+#### UI/UX Enhancements
+- Interactive submenu expansion with visual feedback
+- Smooth CSS transitions and animations
+- Improved mobile responsiveness
+- Better error handling and loading states
+
+### 📚 Documentation
+- Updated README with comprehensive feature descriptions
+- Added GPU monitoring setup guides
+- Enhanced configuration documentation
+- Cross-platform installation instructions
+
+### 🛠️ Development
+- Improved component architecture in Svelte
+- Enhanced state management for conversations
+- Better error boundaries and fallback mechanisms
+- Optimized build process and performance
+
+### Migration Notes
+- **Breaking Changes**: None - fully backward compatible
+- **New Features**: All enhancements are opt-in and work with existing configurations
+- **Configuration**: No changes required - works with existing setups
+
+---
+
 ## [0.2.0] - 2025-01-30
 
 ### 🎨 Major UI/UX Overhaul - Enhanced Chat Interface
