@@ -18,12 +18,42 @@ A comprehensive AI-powered text processing toolkit built on the Model Context Pr
 
 ### Key Capabilities
 - 🔌 **MCP Protocol Support** - Standard interface for AI applications
-- 🦙 **Ollama Integration** - Local AI model support
-- 🌐 **Web UI** - Intuitive browser-based interface
-- 💬 **Chat Mode** - Conversational AI with tool access
+- 🦙 **Ollama Integration** - Local AI model support with dynamic switching
+- 🌐 **Modern Web UI** - Intuitive ChatGPT-like browser interface
+- 💬 **Advanced Chat Mode** - Conversational AI with enhanced UX features
 - 🖥️ **CLI Support** - Command-line interface for automation
 - 🚀 **Easy Deployment** - Docker and native installation options
 - 🔒 **Privacy-First** - All processing happens locally
+
+## 💬 Enhanced Chat Interface
+
+The AI MCP Toolkit features a modern, ChatGPT-inspired chat interface with advanced UX capabilities:
+
+### Chat Features
+- 🗨️ **Smart Auto-Scroll** - Automatic scrolling to new messages with user scroll detection
+- 📋 **Conversation Management** - Create, rename, and organize chat conversations
+- 🗑️ **Bulk Operations** - Clear all conversations with confirmation dialog
+- 📋 **Message Actions** - Copy messages with one-click functionality
+- 🔄 **Response Regeneration** - Re-generate AI responses for better results
+- ⏹️ **Request Cancellation** - Cancel ongoing AI requests mid-generation
+- 📊 **Performance Metrics** - Real-time response times and token speeds
+- 🌙 **Dark/Light Theme** - Automatic theme switching support
+
+### Visual Design
+- 🎨 **Modern Layout** - Clean, professional ChatGPT-like appearance
+- 📏 **Dynamic Sizing** - Message bubbles adapt to content length
+- 🖥️ **Responsive Design** - Optimized for desktop and mobile devices
+- 🔍 **Visual Hierarchy** - Clear distinction between user and AI messages
+- ⚡ **Smooth Animations** - Fluid transitions and loading indicators
+- 💱 **Collapsible Sidebar** - Toggle conversation history visibility
+
+### Conversation Experience
+- 📏 **Persistent History** - Conversations saved automatically across sessions
+- 🏷️ **Auto-Titling** - Conversations automatically named from first message
+- 🔍 **Search & Filter** - Find conversations and messages quickly
+- 📅 **Timeline View** - Messages grouped by date (Today, Yesterday, etc.)
+- 📊 **Usage Statistics** - Track response times and conversation metrics
+- 📥 **Export Options** - Download conversations as text files
 
 ## ✨ Production Ready
 
@@ -37,6 +67,7 @@ This AI MCP Toolkit is production-ready with:
 - 📊 **Monitoring** - Built-in GPU monitoring and performance metrics
 - 🔄 **Auto-recovery** - Graceful error handling and fallback mechanisms
 - 📖 **Complete documentation** - Comprehensive guides and API documentation
+- 🎨 **Modern UI/UX** - ChatGPT-like interface with advanced features
 
 ## 🚀 Quick Start
 
@@ -148,9 +179,36 @@ ai-mcp-toolkit ui
 ```
 
 #### Access the Application
-- **MCP Server**: http://localhost:8000
-- **Web UI**: http://localhost:5173
-- **API Docs**: http://localhost:8000/docs
+- **Enhanced Chat UI**: http://localhost:5173 - Modern ChatGPT-like interface
+- **MCP Server**: http://localhost:8000 - Backend API server
+- **API Documentation**: http://localhost:8000/docs - Interactive API docs
+- **GPU Monitoring**: http://localhost:5173/gpu - Real-time system metrics
+
+### Using the Enhanced Chat Interface
+
+1. **Start a Conversation**
+   - Navigate to http://localhost:5173
+   - Click the "New Conversation" button or start typing
+   - Messages automatically save and organize by date
+
+2. **Chat Features**
+   - **Auto-scroll**: New messages automatically come into view
+   - **Copy messages**: Click the copy icon next to any message
+   - **Regenerate**: Click the regenerate button to get alternative AI responses
+   - **Cancel requests**: Stop AI mid-response with the cancel button
+   - **Real-time metrics**: See response times and token speeds
+
+3. **Conversation Management**
+   - **Sidebar**: Toggle with the sidebar button to view conversation history
+   - **Rename**: Click the edit icon to rename any conversation
+   - **Delete**: Remove individual conversations with confirmation
+   - **Clear All**: Bulk delete all conversations (with safety confirmation)
+   - **Search**: Find specific conversations or messages
+
+4. **Model Switching**
+   - Current model displayed in chat header and message info
+   - Switch models via command line: `./switch-model.sh qwen2.5:7b`
+   - Or use the GPU monitoring page for model management
 
 ### CLI Usage Examples
 
@@ -172,17 +230,23 @@ ai-mcp-toolkit text grammar "This are incorrect grammar"
 
 #### System Management
 ```bash
-# Interactive chat
+# Interactive CLI chat
 ai-mcp-toolkit chat
+
+# Launch enhanced web UI
+ai-mcp-toolkit ui
 
 # List available agents
 ai-mcp-toolkit agents
 
-# System status
+# System status and health check
 ai-mcp-toolkit status
 
 # Configuration management
 ai-mcp-toolkit config show
+
+# Model switching (for enhanced UI)
+./switch-model.sh qwen2.5:7b
 ```
 
 ## ⚙️ Configuration
@@ -299,8 +363,10 @@ AI MCP Toolkit
 ## 📚 Documentation
 
 - [Configuration Guide](docs/CONFIGURATION.md) - Complete configuration documentation
-- [API Reference](http://localhost:8000/docs) - Interactive API documentation
+- [Enhanced Chat Interface](#-enhanced-chat-interface) - Modern UI features and capabilities
 - [Model Management](#-model-management) - AI model switching and monitoring
+- [API Reference](http://localhost:8000/docs) - Interactive API documentation
+- [Cross-Platform Setup](CROSS_PLATFORM_SETUP.md) - Platform-specific installation guides
 - [Contributing Guidelines](CONTRIBUTING.md) - How to contribute to the project
 - [License](LICENSE) - MIT License terms
 
@@ -454,11 +520,11 @@ echo "Hello" | ollama run qwen2.5:7b > /dev/null 2>&1 &
 ollama ps
 ```
 
-#### Method 3: Web Interface
-1. Navigate to the Settings page: http://localhost:5173/settings
-2. Find the "AI Model Management" section
-3. Click on any available model to switch to it
-4. Monitor the switch status with real-time feedback
+#### Method 3: Enhanced Chat Interface
+1. **View Current Model**: Current model is displayed in the chat header and message labels
+2. **Real-time Detection**: Model changes are automatically detected and updated in the UI
+3. **GPU Monitoring**: Visit http://localhost:5173/gpu for detailed model and GPU metrics
+4. **Status Integration**: Chat interface shows connection status and model information
 
 ### 🌐 Model Management API
 
@@ -587,12 +653,14 @@ curl -s http://localhost:5173/api/gpu/metrics | jq
 
 ### 🖥️ Real-Time Model Status
 
-The toolkit automatically detects model changes and updates the UI in real-time:
+The enhanced chat interface automatically detects model changes and updates the UI in real-time:
 
-- **GPU Monitoring Page**: Shows current model with live metrics
-- **Chat Interface**: Displays active model in header and message labels
-- **Settings Page**: Model management interface with status indicators
-- **API Endpoints**: Always return current system state
+- **Chat Header**: Displays current model name with connection status indicator
+- **Message Labels**: Shows which model generated each AI response
+- **Performance Metrics**: Real-time response times and token speeds per message
+- **GPU Monitoring Page**: Comprehensive system metrics at http://localhost:5173/gpu
+- **Auto-Detection**: Model changes are detected automatically without refresh
+- **Connection Status**: Live indicators show when AI services are available
 
 ### 📝 Model Management Script Features
 
@@ -686,7 +754,28 @@ watch -n 5 "curl -s localhost:5173/api/gpu/metrics | jq"  # Monitor GPU metrics
 nvidia-smi -l 5                             # Monitor GPU usage
 ```
 
-## 📞 Support
+## 🆕 Recent Updates
+
+### Enhanced Chat Interface (Latest)
+- ✨ **ChatGPT-like Design** - Modern, professional chat interface
+- 🗨️ **Smart Auto-Scroll** - Intelligent message scrolling with user detection
+- 📋 **Advanced Conversation Management** - Create, rename, delete, and bulk operations
+- 🔄 **Response Regeneration** - Get alternative AI responses with one click
+- ⏹️ **Request Cancellation** - Cancel AI requests mid-generation
+- 📊 **Real-time Metrics** - Live response times and performance data
+- 💱 **Collapsible Sidebar** - Toggle conversation history visibility
+- 🎨 **Dynamic Message Styling** - Adaptive message bubbles and clean typography
+- 🔍 **Improved Visual Hierarchy** - Clear distinction between user and AI content
+- 🌙 **Dark/Light Theme Support** - Automatic theme switching
+
+### System Improvements
+- 🔄 **Dynamic Model Detection** - Real-time model switching without restart
+- 📊 **Enhanced GPU Monitoring** - Comprehensive system metrics dashboard
+- ⚡ **Performance Optimizations** - Faster response times and better resource usage
+- 🔒 **Improved Security** - Enhanced error handling and input validation
+- 📱 **Mobile Responsiveness** - Optimized for all device sizes
+
+## 📢 Support
 
 - 📚 [Documentation](docs/)
 - 🐛 [Issue Tracker](https://github.com/yourusername/ai-mcp-toolkit/issues)
