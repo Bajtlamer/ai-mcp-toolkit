@@ -16,6 +16,12 @@ class ResourceType(str, Enum):
     TEXT = "text"
 
 
+class UserRole(str, Enum):
+    """User role enumeration."""
+    USER = "user"
+    ADMIN = "admin"
+
+
 class MessageRole(str, Enum):
     """Message role enumeration."""
     USER = "user"
@@ -76,6 +82,86 @@ class AgentCapability(BaseModel):
 
 
 # Document models
+class Session(Document):
+    """Session document model for secure server-side session management."""
+    
+    session_id: Indexed(str, unique=True)
+    user_id: Indexed(str)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    expires_at: datetime
+    last_activity: datetime = Field(default_factory=datetime.utcnow)
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    is_active: bool = True
+    
+    class Settings:
+        name = "sessions"
+        indexes = [
+            "session_id",
+            "user_id",
+            "expires_at",
+            "is_active",
+            [("user_id", 1), ("is_active", 1)],
+        ]
+
+
+class AuditLog(Document):
+    """Audit log document for tracking all user operations."""
+    
+    user_id: Indexed(str)
+    username: str
+    action: Indexed(str)  # e.g., "resource.create", "resource.update", "auth.login"
+    resource_type: Optional[str] = None  # e.g., "resource", "prompt", "user"
+    resource_id: Optional[str] = None
+    method: str  # HTTP method: GET, POST, PUT, DELETE
+    endpoint: str  # API endpoint
+    status_code: int  # HTTP status code
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    request_data: Optional[Dict[str, Any]] = None  # Sanitized request data
+    response_data: Optional[Dict[str, Any]] = None  # Sanitized response data
+    error_message: Optional[str] = None
+    duration_ms: Optional[float] = None  # Request duration in milliseconds
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    
+    class Settings:
+        name = "audit_logs"
+        indexes = [
+            "user_id",
+            "username",
+            "action",
+            "resource_type",
+            "timestamp",
+            [("user_id", 1), ("timestamp", -1)],
+            [("action", 1), ("timestamp", -1)],
+        ]
+
+
+class User(Document):
+    """User document model for authentication and authorization."""
+    
+    username: Indexed(str, unique=True)
+    email: Indexed(str, unique=True)
+    password_hash: str
+    full_name: Optional[str] = None
+    role: UserRole = UserRole.USER
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    last_login: Optional[datetime] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    
+    class Settings:
+        name = "users"
+        indexes = [
+            "username",
+            "email",
+            "role",
+            "is_active",
+            "created_at",
+        ]
+
+
 class Resource(Document):
     """Resource document model for MCP resources."""
     
@@ -85,6 +171,7 @@ class Resource(Document):
     mime_type: str
     resource_type: ResourceType
     content: Optional[str] = None
+    owner_id: Optional[str] = None  # User ID who owns this resource
     metadata: ResourceMetadata = Field(default_factory=ResourceMetadata)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -95,8 +182,10 @@ class Resource(Document):
             "uri",
             "name",
             "resource_type",
+            "owner_id",
             "created_at",
             [("resource_type", 1), ("created_at", -1)],
+            [("owner_id", 1), ("created_at", -1)],
         ]
 
 

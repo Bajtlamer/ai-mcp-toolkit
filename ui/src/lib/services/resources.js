@@ -14,7 +14,7 @@ export async function listResources(options = {}) {
   if (options.offset) params.append('offset', options.offset);
   
   const url = `${API_BASE}/resources${params.toString() ? '?' + params.toString() : ''}`;
-  const response = await fetch(url);
+  const response = await fetch(url, { credentials: 'include' });
   
   if (!response.ok) {
     throw new Error(`Failed to list resources: ${response.statusText}`);
@@ -27,7 +27,9 @@ export async function listResources(options = {}) {
  * Get a specific resource by URI
  */
 export async function getResource(uri) {
-  const response = await fetch(`${API_BASE}/resources/${encodeURIComponent(uri)}`);
+  const response = await fetch(`${API_BASE}/resources/${encodeURIComponent(uri)}`, {
+    credentials: 'include'
+  });
   
   if (!response.ok) {
     throw new Error(`Failed to get resource: ${response.statusText}`);
@@ -45,6 +47,7 @@ export async function createResource(resourceData) {
     headers: {
       'Content-Type': 'application/json',
     },
+    credentials: 'include',
     body: JSON.stringify(resourceData),
   });
   
@@ -65,6 +68,7 @@ export async function updateResource(uri, updates) {
     headers: {
       'Content-Type': 'application/json',
     },
+    credentials: 'include',
     body: JSON.stringify(updates),
   });
   
@@ -82,6 +86,7 @@ export async function updateResource(uri, updates) {
 export async function deleteResource(uri) {
   const response = await fetch(`${API_BASE}/resources/${encodeURIComponent(uri)}`, {
     method: 'DELETE',
+    credentials: 'include',
   });
   
   if (!response.ok) {
@@ -96,7 +101,9 @@ export async function deleteResource(uri) {
  * Search resources
  */
 export async function searchResources(query, limit = 100) {
-  const response = await fetch(`${API_BASE}/resources/search/${encodeURIComponent(query)}?limit=${limit}`);
+  const response = await fetch(`${API_BASE}/resources/search/${encodeURIComponent(query)}?limit=${limit}`, {
+    credentials: 'include'
+  });
   
   if (!response.ok) {
     throw new Error(`Failed to search resources: ${response.statusText}`);
@@ -110,7 +117,9 @@ export async function searchResources(query, limit = 100) {
  */
 export async function getResourceCount(resourceType = null) {
   const params = resourceType ? `?resource_type=${resourceType}` : '';
-  const response = await fetch(`${API_BASE}/resources/stats/count${params}`);
+  const response = await fetch(`${API_BASE}/resources/stats/count${params}`, {
+    credentials: 'include'
+  });
   
   if (!response.ok) {
     throw new Error(`Failed to get resource count: ${response.statusText}`);

@@ -1,9 +1,10 @@
 <script>
   import { createEventDispatcher } from 'svelte';
-  import { Menu, Settings, Sun, Moon, Activity } from 'lucide-svelte';
+  import { Menu, Settings, Sun, Moon, Activity, LogOut, User } from 'lucide-svelte';
   import { page } from '$app/stores';
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
+  import { auth } from '$lib/stores/auth';
   
   const dispatch = createEventDispatcher();
   
@@ -128,6 +129,21 @@
     </div>
     
     <div class="flex items-center space-x-2">
+      <!-- User info -->
+      {#if $auth.user}
+        <div class="hidden md:flex items-center space-x-2 px-3 py-1 rounded-lg bg-gray-100 dark:bg-gray-700">
+          <User size={16} class="text-gray-600 dark:text-gray-400" />
+          <span class="text-sm font-medium text-gray-900 dark:text-white">
+            {$auth.user.username}
+          </span>
+          {#if $auth.user.role === 'admin'}
+            <span class="text-xs px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-medium">
+              ADMIN
+            </span>
+          {/if}
+        </div>
+      {/if}
+      
       <!-- Server status details -->
       <button
         class="p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -156,6 +172,16 @@
         on:click={() => goto('/settings')}
       >
         <Settings size={18} />
+      </button>
+      
+      <!-- Logout button -->
+      <button
+        on:click={() => auth.logout()}
+        class="p-2 rounded-md text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+        aria-label="Logout"
+        title="Logout"
+      >
+        <LogOut size={18} />
       </button>
     </div>
   </div>

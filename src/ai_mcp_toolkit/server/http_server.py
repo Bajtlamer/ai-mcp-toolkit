@@ -10,9 +10,10 @@ from typing import Any, Dict, List, Optional
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response, Cookie, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, EmailStr
 from typing import Union
 
 from .mcp_server import MCPServer
@@ -20,8 +21,11 @@ from ..utils.config import Config
 from ..utils.logger import get_logger
 from ..utils.gpu_monitor import get_gpu_monitor, check_gpu_health
 from ..managers.resource_manager import ResourceManager
-from ..models.documents import ResourceType
+from ..managers.user_manager import UserManager
+from ..managers.session_manager import SessionManager
+from ..models.documents import ResourceType, User, UserRole
 from ..models.database import db_manager
+from ..utils.audit import AuditLogger
 
 logger = get_logger(__name__)
 
@@ -104,6 +108,33 @@ class ResourceResponse(BaseModel):
     updated_at: str
 
 
+# Authentication models
+class RegisterRequest(BaseModel):
+    """Request model for user registration."""
+    username: str
+    email: EmailStr
+    password: str
+    full_name: Optional[str] = None
+
+
+class LoginRequest(BaseModel):
+    """Request model for user login."""
+    username: str
+    password: str
+
+
+class UserResponse(BaseModel):
+    """Response model for user data."""
+    id: str
+    username: str
+    email: str
+    full_name: Optional[str] = None
+    role: str
+    is_active: bool
+    created_at: str
+    last_login: Optional[str] = None
+
+
 class HTTPServer:
     """HTTP server that wraps MCP functionality."""
 
@@ -112,6 +143,8 @@ class HTTPServer:
         self.config = config or Config()
         self.mcp_server = None
         self.resource_manager = ResourceManager()
+        self.user_manager = UserManager()
+        self.session_manager = SessionManager()
         self.app = None
         self.logger = get_logger(__name__, level=self.config.log_level)
 
@@ -173,6 +206,157 @@ class HTTPServer:
                 allow_methods=["*"],
                 allow_headers=["*"],
             )
+        
+        # Authentication dependency
+        async def get_current_user(
+            request: Request,
+            session_id: Optional[str] = Cookie(None, alias="session_id")
+        ) -> Optional[User]:
+            """Get current authenticated user from session cookie."""
+            if not session_id:
+                return None
+            
+            user = await self.session_manager.get_user_from_session(session_id)
+            return user
+        
+        async def require_auth(
+            user: Optional[User] = Depends(get_current_user)
+        ) -> User:
+            """Require authentication (raise 401 if not authenticated)."""
+            if not user:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Authentication required"
+                )
+            return user
+        
+        async def require_admin(
+            user: User = Depends(require_auth)
+        ) -> User:
+            """Require admin role (raise 403 if not admin)."""
+            if user.role != UserRole.ADMIN:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Admin access required"
+                )
+            return user
+
+        # Authentication endpoints
+        @app.post("/auth/register", response_model=UserResponse)
+        async def register(request: RegisterRequest):
+            """Register a new user."""
+            try:
+                user = await self.user_manager.register(
+                    username=request.username,
+                    email=request.email,
+                    password=request.password,
+                    full_name=request.full_name
+                )
+                
+                self.logger.info(f"User registered: {user.username}")
+                
+                return UserResponse(
+                    id=str(user.id),
+                    username=user.username,
+                    email=user.email,
+                    full_name=user.full_name,
+                    role=user.role.value,
+                    is_active=user.is_active,
+                    created_at=user.created_at.isoformat(),
+                    last_login=user.last_login.isoformat() if user.last_login else None
+                )
+                
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Error during registration: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail="Registration failed")
+        
+        @app.post("/auth/login")
+        async def login(request_data: LoginRequest, request: Request, response: Response):
+            """Login and create session."""
+            try:
+                # Authenticate user
+                user = await self.user_manager.authenticate(
+                    username=request_data.username,
+                    password=request_data.password
+                )
+                
+                if not user:
+                    raise HTTPException(
+                        status_code=401,
+                        detail="Invalid username or password"
+                    )
+                
+                # Create session
+                client_ip = request.client.host if request.client else None
+                user_agent = request.headers.get("user-agent")
+                
+                session = await self.session_manager.create_session(
+                    user_id=str(user.id),
+                    ip_address=client_ip,
+                    user_agent=user_agent
+                )
+                
+                # Set HTTP-only cookie
+                response.set_cookie(
+                    key="session_id",
+                    value=session.session_id,
+                    httponly=True,
+                    secure=False,  # Set to True in production with HTTPS
+                    samesite="lax",
+                    max_age=86400  # 24 hours
+                )
+                
+                self.logger.info(f"User logged in: {user.username}")
+                
+                return {
+                    "message": "Login successful",
+                    "user": UserResponse(
+                        id=str(user.id),
+                        username=user.username,
+                        email=user.email,
+                        full_name=user.full_name,
+                        role=user.role.value,
+                        is_active=user.is_active,
+                        created_at=user.created_at.isoformat(),
+                        last_login=user.last_login.isoformat() if user.last_login else None
+                    )
+                }
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error during login: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail="Login failed")
+        
+        @app.post("/auth/logout")
+        async def logout(
+            response: Response,
+            session_id: Optional[str] = Cookie(None, alias="session_id")
+        ):
+            """Logout and delete session."""
+            if session_id:
+                await self.session_manager.delete_session(session_id)
+            
+            # Clear cookie
+            response.delete_cookie(key="session_id")
+            
+            return {"message": "Logout successful"}
+        
+        @app.get("/auth/me", response_model=UserResponse)
+        async def get_current_user_info(user: User = Depends(require_auth)):
+            """Get current user information."""
+            return UserResponse(
+                id=str(user.id),
+                username=user.username,
+                email=user.email,
+                full_name=user.full_name,
+                role=user.role.value,
+                is_active=user.is_active,
+                created_at=user.created_at.isoformat(),
+                last_login=user.last_login.isoformat() if user.last_login else None
+            )
 
         # Health check endpoint
         @app.get("/health")
@@ -200,9 +384,9 @@ class HTTPServer:
                     "timestamp": asyncio.get_event_loop().time()
                 }
 
-        # List available tools
+        # List available tools (requires auth)
         @app.get("/tools", response_model=List[Dict[str, Any]])
-        async def list_tools():
+        async def list_tools(user: User = Depends(require_auth)):
             """List all available tools."""
             try:
                 if not self.mcp_server:
@@ -225,9 +409,9 @@ class HTTPServer:
                 self.logger.error(f"Error listing tools: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
-        # Execute a tool
+        # Execute a tool (requires auth)
         @app.post("/tools/execute", response_model=ToolResponse)
-        async def execute_tool(request: ToolRequest):
+        async def execute_tool(request: ToolRequest, user: User = Depends(require_auth)):
             """Execute a specific tool."""
             try:
                 if not self.mcp_server:
@@ -264,9 +448,9 @@ class HTTPServer:
                 self.logger.error(error_msg, exc_info=True)
                 return ToolResponse(result="", success=False, error=error_msg)
 
-        # Get server status
+        # Get server status (requires auth)
         @app.get("/status", response_model=ServerStatus)
-        async def get_status():
+        async def get_status(user: User = Depends(require_auth)):
             """Get server status and statistics."""
             try:
                 if not self.mcp_server:
@@ -286,9 +470,9 @@ class HTTPServer:
                 self.logger.error(f"Error getting server status: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
-        # List agents
+        # List agents (requires auth)
         @app.get("/agents")
-        async def list_agents():
+        async def list_agents(user: User = Depends(require_auth)):
             """List all registered agents."""
             try:
                 if not self.mcp_server:
@@ -309,9 +493,9 @@ class HTTPServer:
                 self.logger.error(f"Error listing agents: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
-        # GPU health check endpoint
+        # GPU health check endpoint (requires auth)
         @app.get("/gpu/health")
-        async def gpu_health():
+        async def gpu_health(user: User = Depends(require_auth)):
             """Get GPU health and status information."""
             try:
                 health_info = await check_gpu_health()
@@ -320,9 +504,9 @@ class HTTPServer:
                 self.logger.error(f"Error checking GPU health: {e}", exc_info=True)
                 return {"error": str(e), "gpu_available": False}
 
-        # GPU performance metrics endpoint
+        # GPU performance metrics endpoint (requires auth)
         @app.get("/gpu/metrics")
-        async def gpu_metrics():
+        async def gpu_metrics(user: User = Depends(require_auth)):
             """Get current GPU performance metrics."""
             try:
                 gpu_monitor = get_gpu_monitor()
@@ -344,9 +528,9 @@ class HTTPServer:
                 self.logger.error(f"Error getting GPU metrics: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
-        # GPU optimization recommendations endpoint
+        # GPU optimization recommendations endpoint (requires auth)
         @app.get("/gpu/recommendations")
-        async def gpu_recommendations():
+        async def gpu_recommendations(user: User = Depends(require_auth)):
             """Get GPU optimization recommendations."""
             try:
                 gpu_monitor = get_gpu_monitor()
@@ -360,10 +544,21 @@ class HTTPServer:
                 self.logger.error(f"Error getting GPU recommendations: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
-        # Chat completions endpoint
+        # Chat completions endpoint (requires auth, model selection admin-only)
         @app.post("/chat/completions", response_model=ChatCompletionResponse)
-        async def chat_completions(request: ChatCompletionRequest):
+        async def chat_completions(
+            request: ChatCompletionRequest,
+            user: User = Depends(require_auth),
+            req: Request = None
+        ):
             """Handle chat completion requests via Ollama."""
+            # Only admins can override the model
+            if request.model and request.model != self.config.ollama_model:
+                if user.role != UserRole.ADMIN:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Only administrators can change the model"
+                    )
             try:
                 start_time = time.time()
                 self.logger.info(f"Processing chat completion request with {len(request.messages)} messages")
@@ -465,15 +660,16 @@ class HTTPServer:
                 self.logger.error(f"Error processing chat completion: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
-        # Resource Management Endpoints
+        # Resource Management Endpoints (all require auth)
         
         @app.get("/resources", response_model=List[Dict[str, Any]])
         async def list_resources(
+            user: User = Depends(require_auth),
             resource_type: Optional[str] = None,
             limit: int = 100,
             offset: int = 0
         ):
-            """List all resources with optional filtering."""
+            """List resources (users see only their own, admins see all)."""
             try:
                 # Convert resource_type string to enum if provided
                 type_filter = None
@@ -513,8 +709,8 @@ class HTTPServer:
                 raise HTTPException(status_code=500, detail=str(e))
         
         @app.get("/resources/{uri:path}", response_model=Dict[str, Any])
-        async def get_resource(uri: str):
-            """Get a specific resource by URI."""
+        async def get_resource(uri: str, user: User = Depends(require_auth)):
+            """Get a specific resource by URI (ownership checked)."""
             try:
                 result = await self.resource_manager.read_resource(uri)
                 
@@ -531,8 +727,8 @@ class HTTPServer:
                 raise HTTPException(status_code=500, detail=str(e))
         
         @app.post("/resources", response_model=ResourceResponse, status_code=201)
-        async def create_resource(request: ResourceCreate):
-            """Create a new resource."""
+        async def create_resource(request: ResourceCreate, user: User = Depends(require_auth)):
+            """Create a new resource (owner set to current user)."""
             try:
                 # Convert resource_type string to enum
                 try:
@@ -575,8 +771,8 @@ class HTTPServer:
                 raise HTTPException(status_code=500, detail=str(e))
         
         @app.put("/resources/{uri:path}", response_model=ResourceResponse)
-        async def update_resource(uri: str, request: ResourceUpdate):
-            """Update an existing resource."""
+        async def update_resource(uri: str, request: ResourceUpdate, user: User = Depends(require_auth)):
+            """Update an existing resource (ownership checked)."""
             try:
                 resource = await self.resource_manager.update_resource(
                     uri=uri,

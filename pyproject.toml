@@ -59,6 +59,11 @@ dependencies = [
     "celery>=5.3.0",
     # Additional MCP protocol support
     "pydantic-settings>=2.0.0",
+    # Authentication dependencies
+    "pyjwt>=2.8.0",
+    "passlib>=1.7.4",
+    "bcrypt>=3.2.0,<4.0.0",  # Version <4.0 for passlib compatibility
+    "email-validator>=2.0.0",
 ]
 
 [project.optional-dependencies]

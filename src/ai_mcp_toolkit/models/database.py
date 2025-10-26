@@ -73,10 +73,13 @@ class DatabaseManager:
     
     async def _init_beanie(self) -> None:
         """Initialize Beanie with document models."""
-        from .documents import Resource, Prompt, Message, Conversation, AgentState, Workflow
+        from .documents import User, Session, AuditLog, Resource, Prompt, Message, Conversation, AgentState, Workflow
         
         # List of all document models
         document_models = [
+            User,
+            Session,
+            AuditLog,
             Resource,
             Prompt,
             Message,
