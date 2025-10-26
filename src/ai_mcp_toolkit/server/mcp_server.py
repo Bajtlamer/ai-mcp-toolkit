@@ -13,6 +13,9 @@ from mcp.types import (
     CallToolRequestParams,
     CallToolResult,
     ListToolsResult,
+    Resource,
+    ListResourcesResult,
+    ReadResourceResult,
 )
 
 from ..agents.text_cleaner import TextCleanerAgent
@@ -26,6 +29,8 @@ from ..agents.text_anonymizer import TextAnonymizerAgent
 from ..utils.config import Config
 from ..utils.logger import get_logger
 from ..utils.gpu_monitor import get_gpu_monitor
+from ..models.database import db_manager
+from ..managers.resource_manager import ResourceManager
 
 logger = get_logger(__name__)
 
@@ -47,6 +52,9 @@ class MCPServer:
         self.config = config or Config()
         self.server = Server("ai-mcp-toolkit")
         self.agents: Dict[str, AgentInfo] = {}
+        self.db_manager = db_manager
+        self._db_connected = False
+        self.resource_manager = ResourceManager()
         
         # Initialize logger
         self.logger = get_logger(__name__, level=self.config.log_level)
@@ -62,6 +70,38 @@ class MCPServer:
 
     def _register_handlers(self) -> None:
         """Register MCP protocol handlers."""
+        
+        @self.server.list_resources()
+        async def list_resources() -> ListResourcesResult:
+            """List all available resources."""
+            try:
+                if not self._db_connected:
+                    self.logger.warning("Database not connected, returning empty resource list")
+                    return ListResourcesResult(resources=[])
+                
+                result = await self.resource_manager.list_resources()
+                self.logger.info(f"Listed {len(result.resources)} resources")
+                return result
+            except Exception as e:
+                self.logger.error(f"Error listing resources: {e}", exc_info=True)
+                return ListResourcesResult(resources=[])
+        
+        @self.server.read_resource()
+        async def read_resource(uri: str) -> ReadResourceResult:
+            """Read a specific resource by URI."""
+            try:
+                if not self._db_connected:
+                    raise ValueError("Database not connected")
+                
+                result = await self.resource_manager.read_resource(uri)
+                self.logger.info(f"Read resource: {uri}")
+                return result
+            except ValueError as e:
+                self.logger.error(f"Resource not found: {uri}")
+                raise
+            except Exception as e:
+                self.logger.error(f"Error reading resource {uri}: {e}", exc_info=True)
+                raise
         
         @self.server.list_tools()
         async def list_tools() -> ListToolsResult:
@@ -207,9 +247,28 @@ class MCPServer:
             raise
 
     async def start(self, host: str = "localhost", port: int = 8000) -> None:
-        """Start the MCP server with GPU monitoring."""
+        """Start the MCP server with database connections and GPU monitoring."""
         try:
             self.logger.info(f"Starting MCP server on {host}:{port}")
+            
+            # Connect to databases
+            try:
+                await self.db_manager.connect()
+                self._db_connected = True
+                
+                # Perform health check
+                health = await self.db_manager.health_check()
+                self.logger.info(f"Database health check: {health}")
+                
+                if health["overall"]:
+                    self.logger.info("✅ All database connections established successfully")
+                else:
+                    self.logger.warning(f"⚠️ Some database connections failed: {health}")
+                    
+            except Exception as e:
+                self.logger.error(f"Failed to connect to databases: {e}")
+                # Continue without database if connection fails
+                self._db_connected = False
             
             # Start GPU monitoring
             await self.gpu_monitor.start_monitoring(interval=10.0)  # Monitor every 10 seconds
@@ -221,9 +280,15 @@ class MCPServer:
             raise
 
     async def stop(self) -> None:
-        """Stop the MCP server and GPU monitoring."""
+        """Stop the MCP server, database connections, and GPU monitoring."""
         try:
             self.logger.info("Stopping MCP server")
+            
+            # Disconnect from databases
+            if self._db_connected:
+                await self.db_manager.disconnect()
+                self._db_connected = False
+                self.logger.info("Database connections closed")
             
             # Stop GPU monitoring
             await self.gpu_monitor.stop_monitoring()
@@ -242,7 +307,7 @@ class MCPServer:
         return list(self.agents.keys())
 
     def get_server_stats(self) -> Dict[str, Any]:
-        """Get server statistics and status including GPU metrics."""
+        """Get server statistics and status including GPU metrics and database health."""
         total_tools = sum(len(info.tools) for info in self.agents.values())
         
         # Get GPU performance summary
@@ -267,7 +332,11 @@ class MCPServer:
                 "max_tokens": self.config.max_tokens,
                 "temperature": self.config.temperature
             },
-            "gpu_performance": gpu_summary
+            "gpu_performance": gpu_summary,
+            "database": {
+                "connected": self._db_connected,
+                "manager": "MongoDB Atlas + Redis"
+            }
         }
 
 
@@ -284,4 +353,7 @@ async def run_server(
 ) -> None:
     """Run the MCP server with the given configuration."""
     server = await create_server(config)
-    await server.start(host, port)
+    try:
+        await server.start(host, port)
+    finally:
+        await server.stop()

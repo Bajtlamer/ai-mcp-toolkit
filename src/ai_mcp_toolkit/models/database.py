@@ -107,8 +107,8 @@ class DatabaseManager:
             logger.info(f"Connected to Redis: {self.settings.redis_url}")
             
         except Exception as e:
-            logger.error(f"Failed to connect to Redis: {e}")
-            raise
+            logger.warning(f"Redis connection failed: {e}. Continuing without Redis.")
+            self.redis_client = None
     
     async def disconnect(self) -> None:
         """Close database connections."""
@@ -150,7 +150,8 @@ class DatabaseManager:
                 await self.redis_client.ping()
                 health["redis"] = True
             
-            health["overall"] = health["mongodb"] and health["redis"]
+            # Overall health is OK if MongoDB is connected (Redis is optional)
+            health["overall"] = health["mongodb"]
             
         except Exception as e:
             logger.error(f"Health check failed: {e}")
