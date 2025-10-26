@@ -18,7 +18,8 @@
     BarChart3,
     X,
     Cpu,
-    Activity
+    Activity,
+    Database
   } from 'lucide-svelte';
   
   const dispatch = createEventDispatcher();
@@ -42,6 +43,7 @@
     { name: 'Dashboard', href: '/', icon: Home },
     { name: 'GPU Monitor', href: '/gpu', icon: Cpu },
     { name: 'AI Chat', href: '/chat', icon: MessageSquare },
+    { name: 'Resources', href: '/resources', icon: Database },
     {
       name: 'AI Agents',
       href: '/agents',

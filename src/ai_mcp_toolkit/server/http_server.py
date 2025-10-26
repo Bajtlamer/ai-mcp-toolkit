@@ -19,6 +19,9 @@ from .mcp_server import MCPServer
 from ..utils.config import Config
 from ..utils.logger import get_logger
 from ..utils.gpu_monitor import get_gpu_monitor, check_gpu_health
+from ..managers.resource_manager import ResourceManager
+from ..models.documents import ResourceType
+from ..models.database import db_manager
 
 logger = get_logger(__name__)
 
@@ -70,6 +73,37 @@ class ChatCompletionResponse(BaseModel):
     usage: Optional[Dict[str, Union[int, float]]] = None
 
 
+class ResourceCreate(BaseModel):
+    """Request model for creating a resource."""
+    uri: str
+    name: str
+    description: str
+    mime_type: str
+    resource_type: str
+    content: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class ResourceUpdate(BaseModel):
+    """Request model for updating a resource."""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    content: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class ResourceResponse(BaseModel):
+    """Response model for a resource."""
+    uri: str
+    name: str
+    description: str
+    mime_type: str
+    resource_type: str
+    content: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
 class HTTPServer:
     """HTTP server that wraps MCP functionality."""
 
@@ -77,6 +111,7 @@ class HTTPServer:
         """Initialize the HTTP server with MCP backend."""
         self.config = config or Config()
         self.mcp_server = None
+        self.resource_manager = ResourceManager()
         self.app = None
         self.logger = get_logger(__name__, level=self.config.log_level)
 
@@ -102,8 +137,25 @@ class HTTPServer:
         async def lifespan(app: FastAPI):
             """Application lifespan manager."""
             self.logger.info("Starting HTTP server")
+            
+            # Initialize database connections
+            try:
+                self.logger.info("Connecting to databases...")
+                await db_manager.connect()
+                self.logger.info("Database connections established")
+            except Exception as e:
+                self.logger.error(f"Failed to connect to databases: {e}", exc_info=True)
+                raise
+            
             yield
+            
+            # Cleanup: disconnect from databases
             self.logger.info("Shutting down HTTP server")
+            try:
+                await db_manager.disconnect()
+                self.logger.info("Database connections closed")
+            except Exception as e:
+                self.logger.error(f"Error closing databases: {e}", exc_info=True)
 
         app = FastAPI(
             title="AI MCP Toolkit HTTP Server",
@@ -127,6 +179,26 @@ class HTTPServer:
         async def health_check():
             """Health check endpoint."""
             return {"status": "healthy", "timestamp": asyncio.get_event_loop().time()}
+        
+        # Database health check endpoint
+        @app.get("/health/database")
+        async def database_health_check():
+            """Database health check endpoint."""
+            try:
+                health = await db_manager.health_check()
+                return {
+                    "status": "healthy" if health["overall"] else "unhealthy",
+                    "mongodb": health["mongodb"],
+                    "redis": health["redis"],
+                    "timestamp": asyncio.get_event_loop().time()
+                }
+            except Exception as e:
+                self.logger.error(f"Database health check failed: {e}", exc_info=True)
+                return {
+                    "status": "unhealthy",
+                    "error": str(e),
+                    "timestamp": asyncio.get_event_loop().time()
+                }
 
         # List available tools
         @app.get("/tools", response_model=List[Dict[str, Any]])
@@ -393,6 +465,213 @@ class HTTPServer:
                 self.logger.error(f"Error processing chat completion: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
+        # Resource Management Endpoints
+        
+        @app.get("/resources", response_model=List[Dict[str, Any]])
+        async def list_resources(
+            resource_type: Optional[str] = None,
+            limit: int = 100,
+            offset: int = 0
+        ):
+            """List all resources with optional filtering."""
+            try:
+                # Convert resource_type string to enum if provided
+                type_filter = None
+                if resource_type:
+                    try:
+                        type_filter = ResourceType(resource_type)
+                    except ValueError:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Invalid resource_type. Must be one of: {[t.value for t in ResourceType]}"
+                        )
+                
+                result = await self.resource_manager.list_resources(
+                    resource_type=type_filter,
+                    limit=limit,
+                    offset=offset
+                )
+                
+                # Convert to dict format
+                resources = [
+                    {
+                        "uri": r.uri,
+                        "name": r.name,
+                        "description": r.description,
+                        "mimeType": r.mimeType
+                    }
+                    for r in result.resources
+                ]
+                
+                self.logger.info(f"Listed {len(resources)} resources")
+                return resources
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error listing resources: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.get("/resources/{uri:path}", response_model=Dict[str, Any])
+        async def get_resource(uri: str):
+            """Get a specific resource by URI."""
+            try:
+                result = await self.resource_manager.read_resource(uri)
+                
+                if not result.contents:
+                    raise HTTPException(status_code=404, detail=f"Resource not found: {uri}")
+                
+                self.logger.info(f"Retrieved resource: {uri}")
+                return result.contents[0]
+                
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Error getting resource {uri}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.post("/resources", response_model=ResourceResponse, status_code=201)
+        async def create_resource(request: ResourceCreate):
+            """Create a new resource."""
+            try:
+                # Convert resource_type string to enum
+                try:
+                    resource_type_enum = ResourceType(request.resource_type)
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid resource_type. Must be one of: {[t.value for t in ResourceType]}"
+                    )
+                
+                resource = await self.resource_manager.create_resource(
+                    uri=request.uri,
+                    name=request.name,
+                    description=request.description,
+                    mime_type=request.mime_type,
+                    resource_type=resource_type_enum,
+                    content=request.content,
+                    metadata=request.metadata
+                )
+                
+                self.logger.info(f"Created resource: {resource.uri}")
+                
+                return ResourceResponse(
+                    uri=resource.uri,
+                    name=resource.name,
+                    description=resource.description,
+                    mime_type=resource.mime_type,
+                    resource_type=resource.resource_type.value,
+                    content=resource.content,
+                    created_at=resource.created_at.isoformat(),
+                    updated_at=resource.updated_at.isoformat()
+                )
+                
+            except ValueError as e:
+                raise HTTPException(status_code=409, detail=str(e))
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error creating resource: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.put("/resources/{uri:path}", response_model=ResourceResponse)
+        async def update_resource(uri: str, request: ResourceUpdate):
+            """Update an existing resource."""
+            try:
+                resource = await self.resource_manager.update_resource(
+                    uri=uri,
+                    name=request.name,
+                    description=request.description,
+                    content=request.content,
+                    metadata=request.metadata
+                )
+                
+                self.logger.info(f"Updated resource: {uri}")
+                
+                return ResourceResponse(
+                    uri=resource.uri,
+                    name=resource.name,
+                    description=resource.description,
+                    mime_type=resource.mime_type,
+                    resource_type=resource.resource_type.value,
+                    content=resource.content,
+                    created_at=resource.created_at.isoformat(),
+                    updated_at=resource.updated_at.isoformat()
+                )
+                
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Error updating resource {uri}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.delete("/resources/{uri:path}", status_code=204)
+        async def delete_resource(uri: str):
+            """Delete a resource."""
+            try:
+                await self.resource_manager.delete_resource(uri)
+                self.logger.info(f"Deleted resource: {uri}")
+                return None
+                
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Error deleting resource {uri}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.get("/resources/search/{query}")
+        async def search_resources(query: str, limit: int = 100):
+            """Search resources by name or description."""
+            try:
+                resources = await self.resource_manager.search_resources(
+                    query=query,
+                    limit=limit
+                )
+                
+                results = [
+                    {
+                        "uri": r.uri,
+                        "name": r.name,
+                        "description": r.description,
+                        "mime_type": r.mime_type,
+                        "resource_type": r.resource_type.value
+                    }
+                    for r in resources
+                ]
+                
+                self.logger.info(f"Search '{query}' found {len(results)} resources")
+                return {"query": query, "results": results, "count": len(results)}
+                
+            except Exception as e:
+                self.logger.error(f"Error searching resources: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.get("/resources/stats/count")
+        async def get_resource_count(resource_type: Optional[str] = None):
+            """Get count of resources."""
+            try:
+                type_filter = None
+                if resource_type:
+                    try:
+                        type_filter = ResourceType(resource_type)
+                    except ValueError:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Invalid resource_type. Must be one of: {[t.value for t in ResourceType]}"
+                        )
+                
+                count = await self.resource_manager.get_resource_count(
+                    resource_type=type_filter
+                )
+                
+                return {"count": count, "resource_type": resource_type}
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error counting resources: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
         # Root endpoint with API info
         @app.get("/")
         async def root():
@@ -403,11 +682,19 @@ class HTTPServer:
                 "description": "HTTP API wrapper for MCP-based text processing agents with GPU acceleration",
                 "endpoints": {
                     "health": "/health",
+                    "database_health": "/health/database",
                     "tools": "/tools",
                     "execute": "/tools/execute",
                     "status": "/status",
                     "agents": "/agents",
                     "chat": "/chat/completions",
+                    "resources": "/resources",
+                    "resources_create": "/resources (POST)",
+                    "resources_get": "/resources/{uri} (GET)",
+                    "resources_update": "/resources/{uri} (PUT)",
+                    "resources_delete": "/resources/{uri} (DELETE)",
+                    "resources_search": "/resources/search/{query}",
+                    "resources_count": "/resources/stats/count",
                     "gpu_health": "/gpu/health",
                     "gpu_metrics": "/gpu/metrics", 
                     "gpu_recommendations": "/gpu/recommendations",
