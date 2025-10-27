@@ -1073,8 +1073,26 @@ class HTTPServer:
                 
                 if not is_text or content_str is None:
                     # For binary files, store metadata only
-                    # In future: store in GridFS or S3
-                    content_str = f"[Binary file: {file.filename}, {len(content_bytes)} bytes, {mime_type}]"
+                    # For PDFs, store the bytes for later text extraction
+                    import base64
+                    metadata = {
+                        'original_filename': file.filename,
+                        'file_size': len(content_bytes),
+                        'is_binary': not is_text
+                    }
+                    
+                    if mime_type == 'application/pdf':
+                        # Store PDF bytes as base64 for later extraction
+                        metadata['pdf_bytes'] = base64.b64encode(content_bytes).decode('utf-8')
+                        content_str = f"[PDF file: {file.filename}, {len(content_bytes)} bytes - text will be extracted on access]"
+                    else:
+                        content_str = f"[Binary file: {file.filename}, {len(content_bytes)} bytes, {mime_type}]"
+                else:
+                    metadata = {
+                        'original_filename': file.filename,
+                        'file_size': len(content_bytes),
+                        'is_binary': False
+                    }
                 
                 # Generate URI
                 uri = f"file:///{file.filename}"
@@ -1091,11 +1109,7 @@ class HTTPServer:
                     resource_type=ResourceType.FILE,
                     owner_id=str(user.id),
                     content=content_str,
-                    metadata={
-                        'original_filename': file.filename,
-                        'file_size': len(content_bytes),
-                        'is_binary': not is_text
-                    }
+                    metadata=metadata
                 )
                 
                 self.logger.info(f"User {user.username} uploaded file: {file.filename} ({len(content_bytes)} bytes)")

@@ -31,6 +31,7 @@ from ..agents.text_summarizer import TextSummarizerAgent
 from ..agents.language_detector import LanguageDetectorAgent
 from ..agents.sentiment_analyzer import SentimentAnalyzerAgent
 from ..agents.text_anonymizer import TextAnonymizerAgent
+from ..agents.pdf_extractor import PDFExtractorAgent
 from ..utils.config import Config
 from ..utils.logger import get_logger
 from ..utils.gpu_monitor import get_gpu_monitor
@@ -305,6 +306,14 @@ class MCPServer:
                 "text_anonymizer",
                 "Anonymize sensitive information in text for privacy protection",
                 text_anonymizer
+            )
+            
+            # PDF Extractor Agent
+            pdf_extractor = PDFExtractorAgent(self.config)
+            self._register_agent(
+                "pdf_extractor",
+                "Extract text content from PDF files",
+                pdf_extractor
             )
             
             self.logger.info(f"Initialized {len(self.agents)} agents")

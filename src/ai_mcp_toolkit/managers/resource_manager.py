@@ -109,9 +109,41 @@ class ResourceManager:
             if not is_admin and user_id and resource.owner_id != user_id:
                 raise ValueError(f"Access denied: Resource not found: {uri}")
             
-            # Fetch content for URL resources
+            # Fetch/extract content based on resource type
             content = resource.content or ""
-            if resource.resource_type == ResourceType.URL and resource.uri.startswith(('http://', 'https://')):
+            
+            # Extract text from PDF files
+            if resource.mime_type == 'application/pdf' and resource.metadata and 'pdf_bytes' in resource.metadata.properties:
+                try:
+                    import base64
+                    from pypdf import PdfReader
+                    import io
+                    
+                    self.logger.info(f"Extracting text from PDF resource: {resource.uri}")
+                    pdf_bytes_b64 = resource.metadata.properties.get('pdf_bytes')
+                    if pdf_bytes_b64:
+                        pdf_bytes = base64.b64decode(pdf_bytes_b64)
+                        pdf_file = io.BytesIO(pdf_bytes)
+                        reader = PdfReader(pdf_file)
+                        
+                        extracted_text = []
+                        for page_num in range(len(reader.pages)):
+                            page = reader.pages[page_num]
+                            text = page.extract_text()
+                            if text.strip():
+                                extracted_text.append(f"--- Page {page_num + 1} ---\n{text}")
+                        
+                        if extracted_text:
+                            content = "\n\n".join(extracted_text)
+                            self.logger.info(f"Extracted {len(content)} characters from PDF ({len(reader.pages)} pages)")
+                        else:
+                            content = "[No text content found in PDF]"
+                except Exception as e:
+                    content = f"[Error extracting PDF text: {str(e)}]"
+                    self.logger.error(f"Error extracting PDF text from {resource.uri}: {e}")
+            
+            # Fetch content from URL resources
+            elif resource.resource_type == ResourceType.URL and resource.uri.startswith(('http://', 'https://')):
                 try:
                     self.logger.info(f"Fetching URL content: {resource.uri}")
                     async with aiohttp.ClientSession() as session:

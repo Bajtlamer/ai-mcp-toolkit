@@ -50,6 +50,7 @@ dependencies = [
     "asyncio-mqtt>=0.16.0",
     "pyyaml>=6.0.0",
     "python-dotenv>=1.0.0",
+    "pypdf>=4.0.0",  # PDF text extraction
     # MongoDB dependencies
     "motor>=3.3.0",
     "pymongo>=4.6.0",
