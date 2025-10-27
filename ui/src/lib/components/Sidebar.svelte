@@ -274,7 +274,7 @@
     <!-- Version info -->
     <div class="px-4 py-2 border-t border-gray-200 dark:border-gray-700">
       <p class="text-xs text-gray-500 dark:text-gray-400">
-        AI MCP Toolkit v0.1.0
+        AI MCP Toolkit v0.1.54-beta
       </p>
     </div>
   </div>

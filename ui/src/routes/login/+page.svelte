@@ -2,6 +2,8 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   
+  const version = '0.1.54-beta';
+  
   let username = '';
   let password = '';
   let error = '';
@@ -50,7 +52,7 @@
   <div class="max-w-md w-full space-y-8">
     <div>
       <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900 dark:text-white">
-        🔐 AI MCP Toolkit
+        🔐 AI MCP Toolkit <span class="text-xs font-normal text-gray-500 dark:text-gray-400">v{version}</span>
       </h2>
       <p class="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
         Sign in to access your account

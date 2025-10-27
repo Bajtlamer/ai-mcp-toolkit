@@ -1,6 +1,8 @@
 <script>
   import { goto } from '$app/navigation';
   
+  const version = '0.1.54-beta';
+  
   let username = '';
   let email = '';
   let password = '';
@@ -82,7 +84,7 @@
         🚀 Create your account
       </h2>
       <p class="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
-        Join AI MCP Toolkit
+        Join AI MCP Toolkit <span class="text-xs font-normal text-gray-500 dark:text-gray-400">v{version}</span>
       </p>
     </div>
     

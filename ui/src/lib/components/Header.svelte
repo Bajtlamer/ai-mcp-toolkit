@@ -9,6 +9,7 @@
   // Receive user from parent
   export let user = null;
   
+  const version = '0.1.54-beta';
   const dispatch = createEventDispatcher();
   
   let darkMode = false;
@@ -111,7 +112,7 @@
       <!-- Page title -->
       <div class="flex items-center space-x-2 min-h-24">
         <h1 class="text-xl font-semibold text-gray-900 dark:text-white">
-          {pageTitle}
+          {pageTitle} <span class="text-xs font-normal text-gray-400 dark:text-gray-500">v{version}</span>
         </h1>
         
         <!-- Server status indicator -->
