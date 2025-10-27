@@ -1,6 +1,6 @@
 <script>
   import { FileText, Play, Copy, Download, Database, Upload } from 'lucide-svelte';
-  import { onMount } from 'svelte';
+  import ResourceSelector from '$lib/components/ResourceSelector.svelte';
   import * as resourceAPI from '$lib/services/resources';
 
   let inputMode = 'file'; // 'file' or 'resource'
@@ -11,27 +11,8 @@
   let error = null;
   let includeMetadata = true;
   let pageRange = 'all';
-  let resources = [];
-  let loadingResources = false;
   let fileInputElement;
   let isDragging = false;
-
-  onMount(async () => {
-    await loadResources();
-  });
-
-  async function loadResources() {
-    try {
-      loadingResources = true;
-      const allResources = await resourceAPI.listResources();
-      // Filter only PDF resources
-      resources = allResources.filter(r => r.mimeType === 'application/pdf');
-    } catch (err) {
-      console.error('Error loading resources:', err);
-    } finally {
-      loadingResources = false;
-    }
-  }
 
   async function extractPdfText() {
     if (inputMode === 'file' && !selectedFile) return;
@@ -259,35 +240,12 @@
           </div>
         {:else if inputMode === 'resource'}
           <!-- Resource Selection Mode -->
-          <div class="h-full flex flex-col space-y-4">
-            <select
-              bind:value={selectedResourceUri}
-              class="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-            >
-              <option value="">-- Select a PDF resource --</option>
-              {#each resources as resource}
-                <option value={resource.uri}>
-                  {resource.name}
-                </option>
-              {/each}
-            </select>
-
-            <div class="flex-1 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-              <div class="flex items-start space-x-3">
-                <div class="flex-shrink-0">
-                  <Database class="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5" />
-                </div>
-                <div class="text-sm text-green-700 dark:text-green-300">
-                  <p class="font-medium">Extract from Uploaded PDFs:</p>
-                  <ul class="mt-1 list-disc list-inside space-y-1">
-                    <li>Select any PDF resource from your library</li>
-                    <li>Text is automatically extracted from stored PDFs</li>
-                    <li>{resources.length} PDF resources available</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
+          <ResourceSelector 
+            bind:selectedResourceUri
+            filterMimeTypes={['application/pdf']}
+            label="Select a PDF resource"
+            infoText="Select any PDF resource from your library"
+          />
         {/if}
       </div>
 

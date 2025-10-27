@@ -17,8 +17,11 @@
     MapPin,
     CreditCard,
     Hash,
-    Trash2
+    Trash2,
+    Database
   } from 'lucide-svelte';
+  import ResourceSelector from '$lib/components/ResourceSelector.svelte';
+  import * as resourceAPI from '$lib/services/resources';
   
   let inputText = '';
   let outputText = '';
@@ -28,6 +31,8 @@
   let selectedWord = null;
   let detectionResults = null;
   let error = null;
+  let inputMode = 'text'; // 'text' or 'resource'
+  let selectedResourceUri = '';
   
   // Settings
   let anonymizationLevel = 'standard';
@@ -124,8 +129,12 @@
   ];
   
   async function anonymizeText() {
-    if (!inputText.trim()) {
+    if (inputMode === 'text' && !inputText.trim()) {
       error = 'Please enter some text to anonymize';
+      return;
+    }
+    if (inputMode === 'resource' && !selectedResourceUri) {
+      error = 'Please select a resource to anonymize';
       return;
     }
     
@@ -135,17 +144,32 @@
     error = null;
     
     try {
+      // Fetch resource text if in resource mode
+      let textToAnonymize = inputText;
+      if (inputMode === 'resource') {
+        const resource = await resourceAPI.getResource(selectedResourceUri);
+        console.log('DEBUG: Resource data:', resource);
+        if (resource && resource.text) {
+          textToAnonymize = resource.text;
+          inputText = resource.text; // Update inputText for analysis
+          console.log('DEBUG: Using resource text, length:', textToAnonymize.length);
+        } else {
+          console.error('DEBUG: Resource missing text field:', resource);
+          throw new Error('Could not fetch resource content');
+        }
+      }
+      
       // Use smart anonymization only when explicitly enabled (but not for strict level)
       // Strict level uses regular anonymization with all patterns enabled
       const useAI = useSmartAnonymization && anonymizationLevel !== 'strict';
       const endpoint = useAI ? 'smart_anonymize' : 'anonymize_text';
       
       const payload = useAI ? {
-        text: inputText,
+        text: textToAnonymize,
         preserve_meaning: preserveStructure,
         context: 'general'
       } : {
-        text: inputText,
+        text: textToAnonymize,
         anonymization_level: anonymizationLevel,
         replacement_strategy: replacementStrategy,
         preserve_structure: preserveStructure
@@ -231,6 +255,7 @@
     inputText = example.text;
     outputText = '';
     analysisResults = null;
+    inputMode = 'text';
   }
   
   function copyToClipboard(text) {
@@ -444,11 +469,34 @@
   
   <!-- Input/Output Section -->
   <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm mb-6">
+    <!-- Input Mode Tabs -->
+    <div class="border-b border-gray-200 dark:border-gray-700">
+      <nav class="-mb-px flex space-x-8 px-4">
+        <button
+          on:click={() => inputMode = 'text'}
+          class="{inputMode === 'text' ? 'border-red-500 text-red-600 dark:text-red-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors"
+        >
+          Text Input
+        </button>
+        <button
+          on:click={() => inputMode = 'resource'}
+          class="{inputMode === 'resource' ? 'border-red-500 text-red-600 dark:text-red-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors"
+        >
+          <Database size={14} class="inline mr-1" />
+          From Resource
+        </button>
+      </nav>
+    </div>
+    
     <div class="border-b border-gray-200 dark:border-gray-700 p-4">
       <div class="flex items-center justify-between">
-        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Text Anonymization</h3>
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+          {inputMode === 'text' ? 'Text Anonymization' : 'Resource Anonymization'}
+        </h3>
         <div class="flex items-center space-x-2">
-          <span class="text-sm text-gray-500 dark:text-gray-400">{inputText.length} characters</span>
+          <span class="text-sm text-gray-500 dark:text-gray-400">
+            {inputMode === 'text' ? `${inputText.length} characters` : (selectedResourceUri ? '✓ Resource selected' : 'Choose resource')}
+          </span>
           {#if outputText}
             <button
               on:click={() => showOriginal = !showOriginal}
@@ -470,12 +518,22 @@
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-0">
       <!-- Input -->
       <div class="p-4 border-r border-gray-200 dark:border-gray-700">
-        <textarea
-          bind:value={inputText}
-          placeholder="Enter text containing sensitive information to anonymize...\n\nExample:\nDear John Smith, please contact me at john.smith@company.com or call (555) 123-4567."
-          class="w-full h-80 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-          disabled={loading}
-        ></textarea>
+        {#if inputMode === 'text'}
+          <textarea
+            bind:value={inputText}
+            placeholder="Enter text containing sensitive information to anonymize...\n\nExample:\nDear John Smith, please contact me at john.smith@company.com or call (555) 123-4567."
+            class="w-full h-80 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+            disabled={loading}
+          ></textarea>
+        {:else}
+          <div class="h-80">
+            <ResourceSelector 
+              bind:selectedResourceUri
+              label="Select a resource to anonymize"
+              infoText="Select any uploaded text file, PDF, or URL resource"
+            />
+          </div>
+        {/if}
       </div>
       
       <!-- Output -->
@@ -495,8 +553,8 @@
             <div class="relative">
               <div class="w-full h-80 p-3 border rounded-lg font-mono text-sm whitespace-pre-wrap overflow-y-auto {
                 showOriginal 
-                  ? 'border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/10' 
-                  : 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/10'
+                  ? 'border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/10 text-gray-900 dark:text-gray-100' 
+                  : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100'
               }">
                 {showOriginal ? inputText : outputText}
               </div>
@@ -558,7 +616,7 @@
       <div class="flex justify-center">
         <button
           on:click={anonymizeText}
-          disabled={loading || !inputText.trim()}
+          disabled={loading || (inputMode === 'text' && !inputText.trim()) || (inputMode === 'resource' && !selectedResourceUri)}
           class="flex items-center px-6 py-3 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 disabled:from-gray-400 disabled:to-gray-400 text-white font-medium rounded-lg transition-all duration-200 transform hover:scale-105 disabled:hover:scale-100 shadow-lg"
         >
           {#if loading}

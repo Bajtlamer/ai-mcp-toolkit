@@ -1,10 +1,14 @@
 <script>
-  import { FileText, Play, Copy, Download } from 'lucide-svelte';
+  import { FileText, Play, Copy, Download, Database } from 'lucide-svelte';
+  import ResourceSelector from '$lib/components/ResourceSelector.svelte';
+  import * as resourceAPI from '$lib/services/resources';
 
   let inputText = '';
   let outputText = '';
   let isProcessing = false;
   let error = null;
+  let inputMode = 'text'; // 'text' or 'resource'
+  let selectedResourceUri = '';
 
   // Example texts for demonstration
   const examples = [
@@ -15,12 +19,24 @@
   ];
 
   async function checkGrammar() {
-    if (!inputText.trim()) return;
+    if (inputMode === 'text' && !inputText.trim()) return;
+    if (inputMode === 'resource' && !selectedResourceUri) return;
     
     isProcessing = true;
     error = null;
     
     try {
+      let textToCheck = inputText;
+      
+      if (inputMode === 'resource') {
+        const resource = await resourceAPI.getResource(selectedResourceUri);
+        if (resource && resource.text) {
+          textToCheck = resource.text;
+        } else {
+          throw new Error('Could not fetch resource content');
+        }
+      }
+      
       const response = await fetch('/api/tools/execute', {
         method: 'POST',
         headers: {
@@ -29,7 +45,7 @@
         body: JSON.stringify({
           name: 'check_grammar',
           arguments: {
-            text: inputText
+            text: textToCheck
           }
         })
       });
@@ -51,6 +67,7 @@
 
   function useExample(text) {
     inputText = text;
+    inputMode = 'text';
   }
 
   function copyToClipboard() {
@@ -102,39 +119,70 @@
   </div>
 
   <!-- Input/Output Interface -->
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[600px]">
     <!-- Input -->
-    <div class="space-y-4">
-      <div class="flex items-center justify-between">
-        <h3 class="text-lg font-medium text-gray-900 dark:text-white">Input Text</h3>
+    <div class="flex flex-col h-full">
+      <!-- Input Mode Tabs -->
+      <div class="border-b border-gray-200 dark:border-gray-700 mb-4">
+        <nav class="-mb-px flex space-x-8">
+          <button
+            on:click={() => inputMode = 'text'}
+            class="{inputMode === 'text' ? 'border-red-500 text-red-600 dark:text-red-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors"
+          >
+            Text Input
+          </button>
+          <button
+            on:click={() => inputMode = 'resource'}
+            class="{inputMode === 'resource' ? 'border-red-500 text-red-600 dark:text-red-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors"
+          >
+            <Database size={14} class="inline mr-1" />
+            From Resource
+          </button>
+        </nav>
+      </div>
+      
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+          {inputMode === 'text' ? 'Input Text' : 'Select Resource'}
+        </h3>
         <span class="text-sm text-gray-500 dark:text-gray-400">
-          {inputText.length} characters
+          {inputMode === 'text' ? `${inputText.length} characters` : (selectedResourceUri ? '✓ Resource selected' : 'Choose resource')}
         </span>
       </div>
       
-      <textarea
-        bind:value={inputText}
-        placeholder="Enter text to check for grammar issues..."
-        class="w-full h-64 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-      ></textarea>
+      <div class="flex-1 mb-4">
+        {#if inputMode === 'text'}
+          <textarea
+            bind:value={inputText}
+            placeholder="Enter text to check for grammar issues..."
+            class="w-full h-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+          ></textarea>
+        {:else}
+          <ResourceSelector 
+            bind:selectedResourceUri
+            label="Select a resource to check grammar"
+            infoText="Select any uploaded text file, PDF, or URL resource"
+          />
+        {/if}
+      </div>
       
       <button
         on:click={checkGrammar}
-        disabled={!inputText.trim() || isProcessing}
+        disabled={(inputMode === 'text' && !inputText.trim()) || (inputMode === 'resource' && !selectedResourceUri) || isProcessing}
         class="w-full flex items-center justify-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors"
       >
         {#if isProcessing}
           <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-          Checking Grammar...
+          {inputMode === 'resource' ? 'Loading & Checking...' : 'Checking Grammar...'}
         {:else}
           <Play size={16} class="mr-2" />
-          Check Grammar
+          {inputMode === 'resource' ? 'Check Grammar from Resource' : 'Check Grammar'}
         {/if}
       </button>
     </div>
 
     <!-- Output -->
-    <div class="space-y-4">
+    <div class="flex flex-col h-full">
       <div class="flex items-center justify-between">
         <h3 class="text-lg font-medium text-gray-900 dark:text-white">Corrected Text</h3>
         {#if outputText}
@@ -157,7 +205,7 @@
         {/if}
       </div>
       
-      <div class="w-full h-64 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800 overflow-y-auto">
+      <div class="flex-1 w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800 overflow-y-auto">
         {#if error}
           <div class="text-red-600 dark:text-red-400">
             <strong>Error:</strong> {error}

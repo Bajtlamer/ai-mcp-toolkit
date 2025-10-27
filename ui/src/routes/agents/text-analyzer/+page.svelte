@@ -1,9 +1,12 @@
 <script>
-  import { BarChart3, Play, Download, Hash, Type, BookOpen, Target } from 'lucide-svelte';
+  import { BarChart3, Play, Download, Hash, Type, BookOpen, Target, Database } from 'lucide-svelte';
+  import ResourceSelector from '$lib/components/ResourceSelector.svelte';
+  import * as resourceAPI from '$lib/services/resources';
 
   let inputText = '';
   let inputUrl = '';
-  let inputMode = 'text'; // 'text' or 'url'
+  let inputMode = 'text'; // 'text', 'url', or 'resource'
+  let selectedResourceUri = '';
   let basicStats = null;
   let wordFrequency = null;
   let readabilityStats = null;
@@ -25,6 +28,7 @@
     // Validate input based on mode
     if (inputMode === 'text' && !inputText.trim()) return;
     if (inputMode === 'url' && !inputUrl.trim()) return;
+    if (inputMode === 'resource' && !selectedResourceUri) return;
     
     isProcessing = true;
     error = null;
@@ -39,8 +43,15 @@
       const args = {};
       if (inputMode === 'text') {
         args.text = inputText;
-      } else {
+      } else if (inputMode === 'url') {
         args.url = inputUrl;
+      } else if (inputMode === 'resource') {
+        const resource = await resourceAPI.getResource(selectedResourceUri);
+        if (resource && resource.text) {
+          args.text = resource.text;
+        } else {
+          throw new Error('Could not fetch resource content');
+        }
       }
       
       // Run all analyses in parallel
@@ -211,12 +222,19 @@
           >
             URL Input
           </button>
+          <button
+            on:click={() => inputMode = 'resource'}
+            class="{inputMode === 'resource' ? 'border-green-500 text-green-600 dark:text-green-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors"
+          >
+            <Database size={14} class="inline mr-1" />
+            From Resource
+          </button>
         </nav>
       </div>
       
       <div class="flex items-center justify-between">
         <h3 class="text-lg font-medium text-gray-900 dark:text-white">
-          {inputMode === 'text' ? 'Input Text' : 'Website URL'}
+          {inputMode === 'text' ? 'Input Text' : inputMode === 'url' ? 'Website URL' : 'Select Resource'}
         </h3>
         <div class="flex items-center space-x-4">
           {#if basicStats}
@@ -238,7 +256,7 @@
             </div>
           {/if}
           <span class="text-sm text-gray-500 dark:text-gray-400">
-            {inputMode === 'text' ? `${inputText.length} characters` : inputUrl ? '✓ URL entered' : 'Enter URL'}
+            {inputMode === 'text' ? `${inputText.length} characters` : inputMode === 'url' ? (inputUrl ? '✓ URL entered' : 'Enter URL') : (selectedResourceUri ? '✓ Resource selected' : 'Choose resource')}
           </span>
         </div>
       </div>
@@ -250,7 +268,7 @@
           placeholder="Enter text to analyze statistics, word frequency, density, and more..."
           class="w-full h-32 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
         ></textarea>
-      {:else}
+      {:else if inputMode === 'url'}
         <!-- URL Input Mode -->
         <div class="space-y-4">
           <input
@@ -279,20 +297,27 @@
             </div>
           </div>
         </div>
+      {:else if inputMode === 'resource'}
+        <!-- Resource Input Mode -->
+        <ResourceSelector 
+          bind:selectedResourceUri
+          label="Select a resource to analyze"
+          infoText="Select any uploaded text file, PDF, or URL resource"
+        />
       {/if}
       
       <div class="flex flex-wrap gap-3">
         <button
           on:click={analyzeText}
-          disabled={(inputMode === 'text' && !inputText.trim()) || (inputMode === 'url' && !inputUrl.trim()) || isProcessing}
+          disabled={(inputMode === 'text' && !inputText.trim()) || (inputMode === 'url' && !inputUrl.trim()) || (inputMode === 'resource' && !selectedResourceUri) || isProcessing}
           class="flex items-center justify-center px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors"
         >
           {#if isProcessing}
             <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-            {inputMode === 'url' ? 'Fetching & Analyzing...' : 'Analyzing Text...'}
+            {inputMode === 'url' ? 'Fetching & Analyzing...' : inputMode === 'resource' ? 'Loading & Analyzing...' : 'Analyzing Text...'}
           {:else}
             <BarChart3 size={16} class="mr-2" />
-            {inputMode === 'url' ? 'Analyze from URL' : 'Analyze Text'}
+            {inputMode === 'url' ? 'Analyze from URL' : inputMode === 'resource' ? 'Analyze Resource' : 'Analyze Text'}
           {/if}
         </button>
         

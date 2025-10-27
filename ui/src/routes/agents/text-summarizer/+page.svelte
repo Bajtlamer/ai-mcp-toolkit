@@ -1,6 +1,6 @@
 <script>
   import { Zap, Play, Copy, Download, Database } from 'lucide-svelte';
-  import { onMount } from 'svelte';
+  import ResourceSelector from '$lib/components/ResourceSelector.svelte';
   import * as resourceAPI from '$lib/services/resources';
 
   let inputText = '';
@@ -12,8 +12,6 @@
   let summaryLength = 'short';
   let inputMode = 'text'; // 'text', 'url', or 'resource'
   let selectedResourceUri = '';
-  let resources = [];
-  let loadingResources = false
   
   const compressionOptions = [
     { value: 'extreme', label: 'Extreme', description: 'Ultra-concise (< 5% of original)' },
@@ -36,20 +34,6 @@
     "Renewable energy comes from sources that are naturally replenishing and virtually inexhaustible in duration but limited in the amount of energy that is available per unit of time. The major types of renewable energy sources are solar energy, wind energy, hydroelectric energy, geothermal energy, and biomass energy. Solar energy harnesses the power of the sun through photovoltaic cells or solar thermal collectors. Wind energy uses turbines to convert the kinetic energy of moving air into electricity. Hydroelectric power generates electricity by using the flow of water to spin turbine generators. Geothermal energy taps into the Earth's internal heat, while biomass energy comes from organic materials. These renewable sources are increasingly important as the world seeks to reduce greenhouse gas emissions and combat climate change while meeting growing energy demands."
   ];
   
-  onMount(async () => {
-    await loadResources();
-  });
-  
-  async function loadResources() {
-    try {
-      loadingResources = true;
-      resources = await resourceAPI.listResources();
-    } catch (err) {
-      console.error('Error loading resources:', err);
-    } finally {
-      loadingResources = false;
-    }
-  }
 
   async function summarizeText() {
     // Validate input based on mode
@@ -243,36 +227,11 @@
           </div>
         {:else if inputMode === 'resource'}
           <!-- Resource Input Mode -->
-          <div class="h-full flex flex-col space-y-4">
-            <select
-              bind:value={selectedResourceUri}
-              class="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-            >
-              <option value="">-- Select a resource --</option>
-              {#each resources as resource}
-                <option value={resource.uri}>
-                  {resource.name} ({resource.mimeType})
-                </option>
-              {/each}
-            </select>
-            
-            <div class="flex-1 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-              <div class="flex items-start space-x-3">
-                <div class="flex-shrink-0">
-                  <Database class="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5" />
-                </div>
-                <div class="text-sm text-green-700 dark:text-green-300">
-                  <p class="font-medium">Summarize from Resources:</p>
-                  <ul class="mt-1 list-disc list-inside space-y-1">
-                    <li>Select any uploaded text file, PDF, or URL resource</li>
-                    <li>Content will be automatically fetched and summarized</li>
-                    <li>Supports all resource types: files, URLs, and text documents</li>
-                    <li>{resources.length} resources available</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
+          <ResourceSelector 
+            bind:selectedResourceUri
+            label="Select a resource to summarize"
+            infoText="Select any uploaded text file, PDF, or URL resource"
+          />
         {/if}
       </div>
 

@@ -6,16 +6,26 @@ const BACKEND_PORT = process.env.MCP_PORT || '8000';
 const BACKEND_URL = `http://${BACKEND_HOST}:${BACKEND_PORT}`;
 
 /** @type {import('./$types').RequestHandler} */
-export async function POST({ request }) {
+export async function POST({ request, cookies }) {
   try {
     const requestBody = await request.json();
+    
+    // Get session cookie from request
+    const sessionCookie = cookies.get('session_id');
+    
+    // Prepare headers with session cookie if available
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    
+    if (sessionCookie) {
+      headers['Cookie'] = `session_id=${sessionCookie}`;
+    }
     
     // Forward the request to the backend MCP server
     const response = await fetch(`${BACKEND_URL}/tools/execute`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(requestBody),
     });
 

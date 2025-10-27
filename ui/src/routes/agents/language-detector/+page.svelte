@@ -1,10 +1,14 @@
 <script>
-  import { Languages, Play, Download } from 'lucide-svelte';
+  import { Languages, Play, Download, Database } from 'lucide-svelte';
+  import ResourceSelector from '$lib/components/ResourceSelector.svelte';
+  import * as resourceAPI from '$lib/services/resources';
 
   let inputText = '';
   let detectionResult = null;
   let isProcessing = false;
   let error = null;
+  let inputMode = 'text'; // 'text' or 'resource'
+  let selectedResourceUri = '';
 
   // Example texts for demonstration
   const examples = [
@@ -19,13 +23,25 @@
   ];
 
   async function detectLanguage() {
-    if (!inputText.trim()) return;
+    if (inputMode === 'text' && !inputText.trim()) return;
+    if (inputMode === 'resource' && !selectedResourceUri) return;
     
     isProcessing = true;
     error = null;
     detectionResult = null;
     
     try {
+      let textToDetect = inputText;
+      
+      if (inputMode === 'resource') {
+        const resource = await resourceAPI.getResource(selectedResourceUri);
+        if (resource && resource.text) {
+          textToDetect = resource.text;
+        } else {
+          throw new Error('Could not fetch resource content');
+        }
+      }
+      
       const response = await fetch('/api/tools/execute', {
         method: 'POST',
         headers: {
@@ -34,7 +50,7 @@
         body: JSON.stringify({
           name: 'detect_language',
           arguments: {
-            text: inputText
+            text: textToDetect
           }
         })
       });
@@ -56,6 +72,7 @@
 
   function useExample(text) {
     inputText = text;
+    inputMode = 'text';
   }
 
   function downloadResult() {
@@ -120,31 +137,60 @@
   <!-- Input Interface -->
   <div class="mb-6">
     <div class="space-y-4">
+      <!-- Input Mode Tabs -->
+      <div class="border-b border-gray-200 dark:border-gray-700">
+        <nav class="-mb-px flex space-x-8">
+          <button
+            on:click={() => inputMode = 'text'}
+            class="{inputMode === 'text' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors"
+          >
+            Text Input
+          </button>
+          <button
+            on:click={() => inputMode = 'resource'}
+            class="{inputMode === 'resource' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors"
+          >
+            <Database size={14} class="inline mr-1" />
+            From Resource
+          </button>
+        </nav>
+      </div>
+      
       <div class="flex items-center justify-between">
-        <h3 class="text-lg font-medium text-gray-900 dark:text-white">Input Text</h3>
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+          {inputMode === 'text' ? 'Input Text' : 'Select Resource'}
+        </h3>
         <span class="text-sm text-gray-500 dark:text-gray-400">
-          {inputText.length} characters
+          {inputMode === 'text' ? `${inputText.length} characters` : (selectedResourceUri ? '✓ Resource selected' : 'Choose resource')}
         </span>
       </div>
       
-      <textarea
-        bind:value={inputText}
-        placeholder="Enter text in any language to detect..."
-        class="w-full h-32 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-      ></textarea>
+      {#if inputMode === 'text'}
+        <textarea
+          bind:value={inputText}
+          placeholder="Enter text in any language to detect..."
+          class="w-full h-32 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+        ></textarea>
+      {:else}
+        <ResourceSelector 
+          bind:selectedResourceUri
+          label="Select a resource to detect language"
+          infoText="Select any uploaded text file, PDF, or URL resource"
+        />
+      {/if}
       
       <div class="flex space-x-3">
         <button
           on:click={detectLanguage}
-          disabled={!inputText.trim() || isProcessing}
+          disabled={(inputMode === 'text' && !inputText.trim()) || (inputMode === 'resource' && !selectedResourceUri) || isProcessing}
           class="flex items-center justify-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors"
         >
           {#if isProcessing}
             <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-            Detecting...
+            {inputMode === 'resource' ? 'Loading & Detecting...' : 'Detecting...'}
           {:else}
             <Play size={16} class="mr-2" />
-            Detect Language
+            {inputMode === 'resource' ? 'Detect Language from Resource' : 'Detect Language'}
           {/if}
         </button>
         

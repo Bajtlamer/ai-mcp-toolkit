@@ -112,6 +112,22 @@ class ResourceManager:
             # Fetch/extract content based on resource type
             content = resource.content or ""
             
+            # Debug logging
+            self.logger.info(f"=== DEBUG READ RESOURCE ===")
+            self.logger.info(f"URI: {uri}")
+            self.logger.info(f"Resource mime_type: {resource.mime_type}")
+            self.logger.info(f"Resource content preview: {content[:100] if content else 'None'}")
+            self.logger.info(f"Resource has metadata: {resource.metadata is not None}")
+            if resource.metadata:
+                self.logger.info(f"Metadata type: {type(resource.metadata)}")
+                self.logger.info(f"Metadata dict: {resource.metadata.dict() if hasattr(resource.metadata, 'dict') else 'N/A'}")
+                if hasattr(resource.metadata, 'properties'):
+                    self.logger.info(f"Metadata properties keys: {list(resource.metadata.properties.keys())}")
+                    self.logger.info(f"Has pdf_bytes: {'pdf_bytes' in resource.metadata.properties}")
+                else:
+                    self.logger.info(f"Metadata has no properties attribute")
+            self.logger.info(f"=== END DEBUG ===")
+            
             # Extract text from PDF files
             if resource.mime_type == 'application/pdf' and resource.metadata and 'pdf_bytes' in resource.metadata.properties:
                 try:
@@ -228,7 +244,7 @@ class ResourceManager:
             resource_metadata = ResourceMetadata(
                 created_at=datetime.utcnow(),
                 modified_at=datetime.utcnow(),
-                **(metadata or {})
+                properties=metadata or {}
             )
             
             # Create new resource
