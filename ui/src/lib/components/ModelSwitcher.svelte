@@ -1,7 +1,8 @@
 <script>
   import { onMount, createEventDispatcher } from 'svelte';
   import { RefreshCw, Cpu, Zap, ShieldAlert } from 'lucide-svelte';
-  import { auth } from '$lib/stores/auth';
+  
+  export let user = null;
   
   const dispatch = createEventDispatcher();
   
@@ -111,7 +112,7 @@
   }
 </script>
 
-{#if $auth.user && $auth.user.role !== 'admin'}
+{#if user && user.role !== 'admin'}
   <!-- Non-admin notice -->
   <div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4">
     <div class="flex items-start space-x-3">

@@ -1,17 +1,14 @@
 <script>
-  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { auth } from '$lib/stores/auth';
+  import { page } from '$app/stores';
   
   let username = '';
   let password = '';
   let error = '';
   let loading = false;
   
-  // Redirect if already logged in (layout already calls auth.init())
-  $: if ($auth.user && !$auth.loading) {
-    goto('/');
-  }
+  // Get redirect URL from query params
+  $: redirectUrl = $page.url.searchParams.get('redirect') || '/';
   
   async function handleLogin(event) {
     event.preventDefault();
@@ -19,10 +16,26 @@
     loading = true;
     
     try {
-      await auth.login(username, password);
-      goto('/');
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username, password }),
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        // Login successful - cookie is set by backend
+        // Redirect to original page or home
+        goto(redirectUrl);
+      } else {
+        const data = await response.json();
+        error = data.detail || 'Login failed. Please check your credentials.';
+      }
     } catch (err) {
-      error = err.message;
+      error = 'Network error. Please try again.';
+      console.error('Login error:', err);
     } finally {
       loading = false;
     }

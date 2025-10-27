@@ -3,7 +3,8 @@
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
   import ModelSwitcher from '$lib/components/ModelSwitcher.svelte';
-  import { auth } from '$lib/stores/auth';
+  
+  export let data;
 
   let serverConfig = {
     host: 'localhost',
@@ -229,7 +230,7 @@
 
   <div class="space-y-8">
     <!-- Server Configuration (Admin Only) -->
-    {#if $auth.user && $auth.user.role === 'admin'}
+    {#if data.user && data.user.role === 'admin'}
     <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
       <div class="flex items-center space-x-3 mb-6">
         <div class="w-8 h-8 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center">
@@ -310,7 +311,7 @@
     {/if}
 
     <!-- Model Management (Admin Only) -->
-    {#if $auth.user && $auth.user.role === 'admin'}
+    {#if data.user && data.user.role === 'admin'}
       <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
         <div class="flex items-center space-x-3 mb-6">
           <div class="w-8 h-8 bg-green-100 dark:bg-green-900 rounded-lg flex items-center justify-center">
@@ -322,7 +323,7 @@
           </div>
         </div>
 
-        <ModelSwitcher />
+        <ModelSwitcher user={data.user} />
       </div>
     {/if}
 

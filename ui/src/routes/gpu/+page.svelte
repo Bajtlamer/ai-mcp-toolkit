@@ -1,6 +1,5 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { auth } from '$lib/stores/auth';
   import {
     Chart,
     CategoryScale,
@@ -31,14 +30,11 @@
     BarChart3
   } from 'lucide-svelte';
   
-  // Get current user to check admin status
-  let currentUser = null;
-  let isAdmin = false;
+  export let data;
   
-  auth.subscribe(state => {
-    currentUser = state.user;
-    isAdmin = state.user?.role === 'admin';
-  });
+  // Get current user from server data
+  $: currentUser = data.user;
+  $: isAdmin = data.user?.role === 'admin';
   
   // Register Chart.js components
   Chart.register(

@@ -4,7 +4,10 @@
   import { page } from '$app/stores';
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
-  import { auth } from '$lib/stores/auth';
+  import { conversations } from '$lib/stores/conversations';
+  
+  // Receive user from parent
+  export let user = null;
   
   const dispatch = createEventDispatcher();
   
@@ -130,13 +133,13 @@
     
     <div class="flex items-center space-x-2">
       <!-- User info -->
-      {#if $auth.user}
+      {#if user}
         <div class="hidden md:flex items-center space-x-2 px-3 py-1 rounded-lg bg-gray-100 dark:bg-gray-700">
           <User size={16} class="text-gray-600 dark:text-gray-400" />
           <span class="text-sm font-medium text-gray-900 dark:text-white">
-            {$auth.user.username}
+            {user.username}
           </span>
-          {#if $auth.user.role === 'admin'}
+          {#if user.role === 'admin'}
             <span class="text-xs px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-medium">
               ADMIN
             </span>
@@ -176,7 +179,22 @@
       
       <!-- Logout button -->
       <button
-        on:click={() => auth.logout()}
+        on:click={async () => {
+          try {
+            // Call logout API (clears session cookie)
+            await fetch('/api/auth/logout', { method: 'POST' });
+            
+            // Clear conversations from store (local only, backend keeps data)
+            conversations.set([]);
+            
+            // Redirect to login
+            goto('/login');
+          } catch (error) {
+            console.error('Logout error:', error);
+            // Still redirect even if logout fails
+            goto('/login');
+          }
+        }}
         class="p-2 rounded-md text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500"
         aria-label="Logout"
         title="Logout"
