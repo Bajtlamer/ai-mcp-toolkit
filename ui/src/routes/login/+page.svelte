@@ -8,13 +8,10 @@
   let error = '';
   let loading = false;
   
-  // Redirect if already logged in
-  onMount(async () => {
-    const user = await auth.init();
-    if (user) {
-      goto('/');
-    }
-  });
+  // Redirect if already logged in (layout already calls auth.init())
+  $: if ($auth.user && !$auth.loading) {
+    goto('/');
+  }
   
   async function handleLogin(event) {
     event.preventDefault();

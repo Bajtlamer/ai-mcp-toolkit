@@ -37,8 +37,9 @@ messages: backendConv.messages.map((msg, index) => ({
 		metrics: msg.metrics || null,
 		model: msg.model || null
 	})),
-		createdAt: new Date(backendConv.created_at),
-		updatedAt: new Date(backendConv.updated_at),
+		// Backend sends UTC timestamps without 'Z', so append it for correct parsing
+		createdAt: new Date(backendConv.created_at + 'Z'),
+		updatedAt: new Date(backendConv.updated_at + 'Z'),
 		isLoading: false,
 		// Thinking time metrics from metadata
 		thinkingTimes: backendConv.metadata?.thinkingTimes || [],
@@ -219,19 +220,28 @@ function createConversationsStore() {
 			));
 		},
 
-		// Clear all conversations (delete all on backend)
-		clearAll: async () => {
-			try {
-				const currentConvs = get({ subscribe });
-				for (const conv of currentConvs) {
-					await apiDeleteConversation(conv.id);
-				}
-				set([]);
-			} catch (error) {
-				console.error('Failed to clear all conversations:', error);
-				throw error;
+	// Clear all conversations (bulk delete on backend)
+	clearAll: async () => {
+		try {
+			// Use bulk delete endpoint
+			const response = await fetch('http://localhost:8000/conversations', {
+				method: 'DELETE',
+				credentials: 'include'
+			});
+			
+			if (!response.ok) {
+				throw new Error('Failed to delete conversations');
 			}
-		},
+			
+			const result = await response.json();
+			console.log(`Bulk deleted ${result.deleted_count} conversations`);
+			
+			set([]);
+		} catch (error) {
+			console.error('Failed to clear all conversations:', error);
+			throw error;
+		}
+	},
 
 		// Export conversations (from backend)
 		exportConversations: async () => {

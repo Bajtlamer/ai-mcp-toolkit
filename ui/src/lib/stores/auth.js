@@ -6,6 +6,7 @@
 import { writable } from 'svelte/store';
 import { goto } from '$app/navigation';
 import * as authService from '$lib/services/auth';
+import { conversations } from './conversations';
 
 // Create a writable store for the current user
 function createAuthStore() {
@@ -70,13 +71,22 @@ function createAuthStore() {
      */
     logout: async () => {
       try {
-        await authService.logout();
+        // Clear user state first to prevent 401 errors
         set({ user: null, loading: false, error: null });
+        // Clear conversations to prevent showing stale data
+        conversations.set([]);
+        // Then logout on backend (may fail with 401, that's ok)
+        try {
+          await authService.logout();
+        } catch (e) {
+          // Ignore 401 errors during logout
+        }
         goto('/login');
       } catch (error) {
         console.error('Logout error:', error);
         // Force logout on frontend even if backend fails
         set({ user: null, loading: false, error: null });
+        conversations.set([]);
         goto('/login');
       }
     },

@@ -551,9 +551,9 @@ class HTTPServer:
                 self.logger.error(error_msg, exc_info=True)
                 return ToolResponse(result="", success=False, error=error_msg)
 
-        # Get server status (requires auth)
+        # Get server status (public - no auth required)
         @app.get("/status", response_model=ServerStatus)
-        async def get_status(user: User = Depends(require_auth)):
+        async def get_status():
             """Get server status and statistics."""
             try:
                 if not self.mcp_server:
@@ -596,9 +596,9 @@ class HTTPServer:
                 self.logger.error(f"Error listing agents: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
-        # GPU health check endpoint (requires auth)
+        # GPU health check endpoint (public - no auth required)
         @app.get("/gpu/health")
-        async def gpu_health(user: User = Depends(require_auth)):
+        async def gpu_health():
             """Get GPU health and status information."""
             try:
                 health_info = await check_gpu_health()
@@ -1845,6 +1845,32 @@ class HTTPServer:
                 raise
             except Exception as e:
                 self.logger.error(f"Error deleting conversation {conversation_id}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.delete("/conversations", status_code=200)
+        async def delete_all_conversations(user: User = Depends(require_auth)):
+            """Delete all conversations for the current user (bulk operation)."""
+            try:
+                deleted_count = await self.conversation_manager.delete_all_conversations(
+                    user_id=str(user.id)
+                )
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="conversations.delete_all",
+                    method="DELETE",
+                    endpoint="/conversations",
+                    status_code=200,
+                    resource_type="conversation",
+                    response_data={"deleted_count": deleted_count}
+                )
+                
+                self.logger.info(f"Deleted {deleted_count} conversations for user {user.username}")
+                return {"deleted_count": deleted_count, "message": f"Successfully deleted {deleted_count} conversations"}
+                
+            except Exception as e:
+                self.logger.error(f"Error deleting all conversations: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
         
         @app.post("/conversations/{conversation_id}/messages", response_model=ConversationResponse)

@@ -197,6 +197,32 @@ class ConversationManager:
             self.logger.error(f"Error deleting conversation {conversation_id}: {e}", exc_info=True)
             return False
     
+    async def delete_all_conversations(
+        self,
+        user_id: str
+    ) -> int:
+        """
+        Delete all conversations for a user (bulk operation).
+        
+        Args:
+            user_id: User ID
+            
+        Returns:
+            Number of conversations deleted
+        """
+        try:
+            result = await Conversation.find(
+                Conversation.user_id == user_id
+            ).delete()
+            
+            deleted_count = result.deleted_count if hasattr(result, 'deleted_count') else 0
+            self.logger.info(f"Deleted {deleted_count} conversations for user {user_id}")
+            return deleted_count
+            
+        except Exception as e:
+            self.logger.error(f"Error deleting all conversations for user {user_id}: {e}", exc_info=True)
+            return 0
+    
     async def add_message(
         self,
         conversation_id: str,

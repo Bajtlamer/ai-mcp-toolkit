@@ -11,7 +11,7 @@
     AlertTriangle
   } from 'lucide-svelte';
   import { conversations, currentConversationId } from '$lib/stores/conversations.js';
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   
   const dispatch = createEventDispatcher();
   
@@ -20,6 +20,24 @@
   let editingTitle = '';
   let showDeleteConfirm = null;
   let showClearAllConfirm = false;
+  let currentTime = new Date();
+  let timeUpdateInterval;
+  
+  // Update current time every 10 seconds to refresh relative times
+  onMount(() => {
+    // Update immediately on mount
+    currentTime = new Date();
+    
+    timeUpdateInterval = setInterval(() => {
+      currentTime = new Date();
+    }, 10000); // Update every 10 seconds for more accurate relative times
+  });
+  
+  onDestroy(() => {
+    if (timeUpdateInterval) {
+      clearInterval(timeUpdateInterval);
+    }
+  });
   
   // Filter conversations based on search term
   $: filteredConversations = $conversations.filter(conv => 
@@ -34,13 +52,14 @@
   
   function groupConversationsByDate(convs) {
     const groups = {};
-    const now = new Date();
+    const now = currentTime; // Use reactive currentTime
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
     const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
     
     convs.forEach(conv => {
-      const convDate = new Date(conv.updatedAt);
+      // Ensure updatedAt is a Date object
+      const convDate = conv.updatedAt instanceof Date ? conv.updatedAt : new Date(conv.updatedAt);
       const convDateOnly = new Date(convDate.getFullYear(), convDate.getMonth(), convDate.getDate());
       
       let groupKey;
@@ -62,7 +81,11 @@
     
     // Sort conversations within each group by updatedAt (newest first)
     Object.keys(groups).forEach(key => {
-      groups[key].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+      groups[key].sort((a, b) => {
+        const dateA = a.updatedAt instanceof Date ? a.updatedAt : new Date(a.updatedAt);
+        const dateB = b.updatedAt instanceof Date ? b.updatedAt : new Date(b.updatedAt);
+        return dateB - dateA;
+      });
     });
     
     return groups;
@@ -131,8 +154,11 @@
   }
 
   function formatRelativeTime(date) {
-    const now = new Date();
-    const diffMs = now - date;
+    // Use currentTime to make this reactive
+    const now = currentTime;
+    // Ensure date is a Date object
+    const dateObj = date instanceof Date ? date : new Date(date);
+    const diffMs = now - dateObj;
     const diffMins = Math.floor(diffMs / (1000 * 60));
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -142,7 +168,7 @@
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays < 7) return `${diffDays}d ago`;
     
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 </script>
 
@@ -253,22 +279,25 @@
                         </h3>
                       </div>
                       
-                      <div class="flex items-center justify-between mt-1">
-                        <div class="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
-                          <span class="truncate">
-                            {conversation.messages.length} message{conversation.messages.length !== 1 ? 's' : ''}
-                          </span>
+                      <div class="flex items-center justify-between mt-1.5 gap-2">
+                        <div class="flex items-center flex-wrap gap-1.5 text-xs">
+                          {#if conversation.messages.find(m => m.role === 'assistant' && m.model)}
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 font-medium" title="Model used">
+                              {conversation.messages.find(m => m.role === 'assistant' && m.model).model}
+                            </span>
+                          {/if}
+                          {#if conversation.responseCount && conversation.responseCount > 0}
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300" title="AI responses">
+                              🤖 {conversation.responseCount}
+                            </span>
+                          {/if}
                           {#if conversation.averageThinkingTime && conversation.averageThinkingTime > 0}
-                            <div class="flex items-center space-x-1 text-green-600 dark:text-green-400" title="Average AI thinking time">
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="10"/>
-                                <polyline points="12,6 12,12 16,14"/>
-                              </svg>
-                              <span>{conversation.averageThinkingTime}s</span>
-                            </div>
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300" title="Average AI thinking time">
+                              ⏱️ {conversation.averageThinkingTime}s
+                            </span>
                           {/if}
                         </div>
-                        <span class="text-xs text-gray-400 dark:text-gray-500">
+                        <span class="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">
                           {formatRelativeTime(conversation.updatedAt)}
                         </span>
                       </div>

@@ -27,7 +27,12 @@
   }
   
   onMount(async () => {
-    // Initialize auth state
+    // Skip auth check on public pages (login/register)
+    if (isAuthPage) {
+      return;
+    }
+    
+    // Initialize auth state for protected pages
     const user = await auth.init();
     
     // Load conversations if authenticated
@@ -37,10 +42,8 @@
       } catch (error) {
         console.error('Failed to load conversations:', error);
       }
-    }
-    
-    // Redirect to login if not authenticated and not on public route
-    if (!user && !isAuthPage) {
+    } else {
+      // Redirect to login if not authenticated
       goto('/login');
     }
     

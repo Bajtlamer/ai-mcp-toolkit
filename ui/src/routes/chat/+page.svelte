@@ -24,6 +24,7 @@
 
   let inputText = '';
   let chatContainer;
+  let inputTextarea;
   let error = null;
   let serverStatus = { mcp: false, ollama: false, canChat: false };
   let showSidebar = false; // Start with sidebar closed on mobile, open on desktop
@@ -406,7 +407,13 @@
     
     // Reset auto-scroll behavior and scroll to bottom
     shouldAutoScroll = true;
-    tick().then(() => scrollToBottom(true));
+    tick().then(() => {
+      scrollToBottom(true);
+      // Focus the textarea after switching/creating conversation
+      if (inputTextarea) {
+        inputTextarea.focus();
+      }
+    });
   }
 
   function showNotification(type, message) {
@@ -577,23 +584,23 @@
                         <div class="flex-1 min-w-0 pr-4">
                           <div class="flex items-center flex-wrap gap-2 mb-3">
                             <span class="text-sm font-medium text-gray-900 dark:text-white">
-                              {message.model || serverStatus.model?.name || 'AI Assistant'}
+                              {message.model || 'AI Assistant'}
                             </span>
                             <span class="text-xs text-gray-500 dark:text-gray-400">
                               {formatTimestamp(message.timestamp)}
                             </span>
                             {#if message.metrics}
-                              <span class="text-xs text-gray-500 dark:text-gray-400">
-                                • {message.metrics.totalTime?.toFixed(1)}s
+                              <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/30 text-xs font-medium text-blue-700 dark:text-blue-300">
+                                ⏱️ {message.metrics.totalTime?.toFixed(1)}s
                               </span>
                               {#if message.metrics.tokensPerSecond > 0}
-                                <span class="text-xs text-gray-500 dark:text-gray-400">
-                                  • {message.metrics.tokensPerSecond.toFixed(1)} t/s
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-green-50 dark:bg-green-900/30 text-xs font-medium text-green-700 dark:text-green-300">
+                                  ⚡ {message.metrics.tokensPerSecond.toFixed(1)} t/s
                                 </span>
                               {/if}
                               {#if message.metrics.promptTokens > 0}
-                                <span class="text-xs text-gray-500 dark:text-gray-400">
-                                  • {message.metrics.promptTokens} in / {message.metrics.completionTokens} out
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-purple-50 dark:bg-purple-900/30 text-xs font-medium text-purple-700 dark:text-purple-300">
+                                  🎯 {message.metrics.promptTokens} → {message.metrics.completionTokens}
                                 </span>
                               {/if}
                             {/if}
@@ -720,6 +727,7 @@
           <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
             <div class="relative">
               <textarea
+                bind:this={inputTextarea}
                 bind:value={inputText}
                 on:keydown={handleKeyDown}
                 placeholder="Message {serverStatus.model?.name || 'AI'}..."
