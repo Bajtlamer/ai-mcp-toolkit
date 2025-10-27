@@ -1,12 +1,13 @@
 <script>
   import '../app.css';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
   import { Toaster } from 'svelte-french-toast';
   
   import Sidebar from '$lib/components/Sidebar.svelte';
   import Header from '$lib/components/Header.svelte';
   import { conversations } from '$lib/stores/conversations';
+  import { keyboardShortcuts } from '$lib/utils/keyboard';
   
   // Get server-side user data from page data
   export let data;
@@ -52,9 +53,34 @@
     
     document.addEventListener('click', handleClickOutside);
     
+    // Register global keyboard shortcuts
+    keyboardShortcuts.start();
+    
+    // Escape key to close sidebar
+    keyboardShortcuts.register('Escape', () => {
+      if (sidebarOpen) {
+        closeSidebar();
+      }
+    });
+    
+    // Ctrl/Cmd + K to toggle sidebar
+    keyboardShortcuts.register('k', () => {
+      toggleSidebar();
+    }, { metaKey: true });
+    
+    keyboardShortcuts.register('k', () => {
+      toggleSidebar();
+    }, { ctrlKey: true });
+    
     return () => {
       document.removeEventListener('click', handleClickOutside);
     };
+  });
+  
+  onDestroy(() => {
+    if (browser) {
+      keyboardShortcuts.stop();
+    }
   });
 </script>
 

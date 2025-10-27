@@ -26,7 +26,7 @@ from ..managers.user_manager import UserManager
 from ..managers.session_manager import SessionManager
 from ..managers.conversation_manager import ConversationManager
 from ..managers.prompt_manager import PromptManager
-from ..models.documents import ResourceType, User, UserRole
+from ..models.documents import ResourceType, User, UserRole, Resource
 from ..models.database import db_manager
 from ..utils.audit import AuditLogger
 
@@ -242,6 +242,57 @@ class HTTPServer:
         self.app = None
         self.logger = get_logger(__name__, level=self.config.log_level)
 
+    def _format_file_size(self, size_bytes: int) -> str:
+        """Format file size in human-readable format."""
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.2f} {unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.2f} PB"
+    
+    def _detect_file_category(self, mime_type: str, extension: str) -> str:
+        """Detect file category from MIME type and extension."""
+        mime_lower = mime_type.lower()
+        ext_lower = extension.lower()
+        
+        # Document types
+        if mime_type == 'application/pdf' or ext_lower == '.pdf':
+            return 'document'
+        if mime_lower in ['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'] or ext_lower in ['.doc', '.docx']:
+            return 'document'
+        if mime_lower in ['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'] or ext_lower in ['.xls', '.xlsx']:
+            return 'spreadsheet'
+        if mime_lower in ['application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'] or ext_lower in ['.ppt', '.pptx']:
+            return 'presentation'
+        
+        # Code files
+        if ext_lower in ['.py', '.js', '.ts', '.java', '.cpp', '.c', '.go', '.rs', '.php', '.rb', '.swift', '.kt']:
+            return 'code'
+        if mime_lower in ['application/javascript', 'application/x-javascript', 'application/x-httpd-php']:
+            return 'code'
+        
+        # Text files
+        if mime_type.startswith('text/'):
+            return 'text'
+        if ext_lower in ['.txt', '.md', '.log', '.csv', '.json', '.xml', '.yaml', '.yml']:
+            return 'text'
+        
+        # Media files
+        if mime_type.startswith('image/'):
+            return 'image'
+        if mime_type.startswith('audio/'):
+            return 'audio'
+        if mime_type.startswith('video/'):
+            return 'video'
+        
+        # Archives
+        if ext_lower in ['.zip', '.tar', '.gz', '.rar', '.7z', '.bz2']:
+            return 'archive'
+        if mime_lower in ['application/zip', 'application/x-tar', 'application/x-rar-compressed']:
+            return 'archive'
+        
+        return 'other'
+    
     async def initialize(self):
         """Initialize the MCP server and create FastAPI app."""
         try:
@@ -1048,57 +1099,144 @@ class HTTPServer:
             description: str = Form(...),
             user: User = Depends(require_auth)
         ):
-            """Upload a file as a resource."""
+            """Upload a file as a resource with automatic detection and unique naming."""
             try:
+                import uuid
+                import hashlib
+                import base64
+                from pathlib import Path
+                from datetime import datetime
+                
                 # Read file content
                 content_bytes = await file.read()
                 
-                # Detect resource type based on MIME type
+                # Calculate content hash for deduplication detection
+                content_hash = hashlib.sha256(content_bytes).hexdigest()
+                
+                # Auto-detect MIME type (trust browser but verify with python-magic if available)
                 mime_type = file.content_type or 'application/octet-stream'
+                
+                # Try to detect MIME type more accurately using magic numbers
+                try:
+                    import magic
+                    detected_mime = magic.from_buffer(content_bytes[:2048], mime=True)
+                    if detected_mime and detected_mime != 'application/octet-stream':
+                        mime_type = detected_mime
+                        self.logger.info(f"Detected MIME type: {mime_type} (browser sent: {file.content_type})")
+                except (ImportError, Exception) as e:
+                    # python-magic not available or failed, use browser-provided type
+                    self.logger.debug(f"MIME detection via magic failed: {e}")
+                    pass
+                
+                # Generate unique filename with UUID
+                file_extension = Path(file.filename).suffix.lower() if file.filename else ''
+                unique_id = uuid.uuid4()
+                unique_filename = f"{unique_id}{file_extension}"
+                
+                # Create user-scoped URI with unique filename
+                uri = f"file:///{user.id}/{unique_filename}"
                 
                 # Determine if it's a text file we can store directly
                 is_text = mime_type.startswith('text/') or mime_type in [
-                    'application/json', 'application/xml', 'application/javascript'
+                    'application/json', 'application/xml', 'application/javascript',
+                    'application/x-javascript', 'application/x-httpd-php'
                 ]
                 
-                # For text files under 10MB, store content directly
-                # For binary files or large files, store base64 encoded or reference
+                # Detect file structure and category
+                file_category = self._detect_file_category(mime_type, file_extension)
+                
+                # Build comprehensive metadata
+                metadata = {
+                    'original_filename': file.filename,
+                    'unique_filename': unique_filename,
+                    'file_size': len(content_bytes),
+                    'file_size_human': self._format_file_size(len(content_bytes)),
+                    'content_hash': content_hash,
+                    'mime_type_detected': mime_type,
+                    'mime_type_browser': file.content_type,
+                    'file_extension': file_extension,
+                    'file_category': file_category,
+                    'upload_timestamp': datetime.utcnow().isoformat(),
+                    'is_binary': not is_text,
+                    'uploaded_by': user.username
+                }
+                
+                # Check for duplicate content (warning only, not blocking)
+                duplicate_check = await Resource.find_one(
+                    Resource.owner_id == str(user.id),
+                    Resource.metadata.properties.content_hash == content_hash
+                )
+                if duplicate_check:
+                    metadata['duplicate_of'] = str(duplicate_check.id)
+                    metadata['duplicate_warning'] = f"Same content as '{duplicate_check.name}' uploaded on {duplicate_check.created_at.isoformat()}"
+                    self.logger.info(f"User {user.username} uploading duplicate content (hash: {content_hash[:16]}...)")
+                
+                # Process content based on file type
                 content_str = None
+                
+                # For text files under 10MB, store content directly
                 if is_text and len(content_bytes) < 10 * 1024 * 1024:  # 10MB limit
                     try:
                         content_str = content_bytes.decode('utf-8')
+                        metadata['encoding'] = 'utf-8'
+                        metadata['char_count'] = len(content_str)
+                        metadata['line_count'] = content_str.count('\n') + 1
                     except UnicodeDecodeError:
                         # If decode fails, treat as binary
                         is_text = False
+                        metadata['is_binary'] = True
+                        self.logger.warning(f"File {file.filename} marked as text but decode failed")
                 
+                # For binary files
                 if not is_text or content_str is None:
-                    # For binary files, store metadata only
-                    # For PDFs, store the bytes for later text extraction
-                    import base64
-                    metadata = {
-                        'original_filename': file.filename,
-                        'file_size': len(content_bytes),
-                        'is_binary': not is_text
-                    }
-                    
                     if mime_type == 'application/pdf':
-                        # Store PDF bytes as base64 for later extraction
+                        # Store PDF bytes as base64 for later text extraction
                         metadata['pdf_bytes'] = base64.b64encode(content_bytes).decode('utf-8')
-                        content_str = f"[PDF file: {file.filename}, {len(content_bytes)} bytes - text will be extracted on access]"
+                        
+                        # Try to extract PDF info
+                        try:
+                            from pypdf import PdfReader
+                            import io
+                            pdf_file = io.BytesIO(content_bytes)
+                            reader = PdfReader(pdf_file)
+                            metadata['pdf_pages'] = len(reader.pages)
+                            if reader.metadata:
+                                metadata['pdf_title'] = reader.metadata.get('/Title', '')
+                                metadata['pdf_author'] = reader.metadata.get('/Author', '')
+                                metadata['pdf_subject'] = reader.metadata.get('/Subject', '')
+                        except Exception as e:
+                            self.logger.warning(f"Could not extract PDF metadata: {e}")
+                        
+                        content_str = f"[PDF file: {file.filename}, {metadata['file_size_human']}, {metadata.get('pdf_pages', '?')} pages]"
+                    
+                    elif mime_type.startswith('image/'):
+                        # Store image metadata
+                        try:
+                            from PIL import Image
+                            import io
+                            img = Image.open(io.BytesIO(content_bytes))
+                            metadata['image_width'] = img.width
+                            metadata['image_height'] = img.height
+                            metadata['image_format'] = img.format
+                            metadata['image_mode'] = img.mode
+                        except Exception as e:
+                            self.logger.warning(f"Could not extract image metadata: {e}")
+                        
+                        content_str = f"[Image file: {file.filename}, {metadata['file_size_human']}, {metadata.get('image_width', '?')}x{metadata.get('image_height', '?')}]"
+                    
                     else:
-                        content_str = f"[Binary file: {file.filename}, {len(content_bytes)} bytes, {mime_type}]"
-                else:
-                    metadata = {
-                        'original_filename': file.filename,
-                        'file_size': len(content_bytes),
-                        'is_binary': False
-                    }
+                        # Generic binary file
+                        content_str = f"[Binary file: {file.filename}, {metadata['file_size_human']}, {mime_type}]"
                 
-                # Generate URI
-                uri = f"file:///{file.filename}"
                 
-                # Use provided name or filename
+                # Use provided name or original filename
                 resource_name = name or file.filename
+                
+                # Auto-generate description if not provided
+                if not description or description.strip() == '':
+                    description = f"{file_category.title()} file: {file.filename} ({metadata['file_size_human']})"
+                    if 'duplicate_warning' in metadata:
+                        description += " [Duplicate content detected]"
                 
                 # Create resource with owner_id
                 resource = await self.resource_manager.create_resource(
@@ -1112,7 +1250,10 @@ class HTTPServer:
                     metadata=metadata
                 )
                 
-                self.logger.info(f"User {user.username} uploaded file: {file.filename} ({len(content_bytes)} bytes)")
+                self.logger.info(
+                    f"User {user.username} uploaded: {file.filename} -> {unique_filename} "
+                    f"({metadata['file_size_human']}, {file_category}, hash: {content_hash[:16]}...)"
+                )
                 
                 # Log audit event
                 await AuditLogger.log(

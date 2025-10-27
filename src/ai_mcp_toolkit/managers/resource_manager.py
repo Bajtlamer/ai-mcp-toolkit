@@ -235,10 +235,8 @@ class ResourceManager:
             ValueError: If resource with URI already exists
         """
         try:
-            # Check if resource already exists
-            existing = await Resource.find_one(Resource.uri == uri)
-            if existing:
-                raise ValueError(f"Resource already exists: {uri}")
+            # Note: We allow duplicate URIs now since each upload gets a unique UUID
+            # Users can upload multiple versions of the same file
             
             # Create resource metadata
             resource_metadata = ResourceMetadata(
