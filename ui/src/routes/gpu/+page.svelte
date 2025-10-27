@@ -1,5 +1,6 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
+  import { auth } from '$lib/stores/auth';
   import {
     Chart,
     CategoryScale,
@@ -29,6 +30,15 @@
     Gauge,
     BarChart3
   } from 'lucide-svelte';
+  
+  // Get current user to check admin status
+  let currentUser = null;
+  let isAdmin = false;
+  
+  auth.subscribe(state => {
+    currentUser = state.user;
+    isAdmin = state.user?.role === 'admin';
+  });
   
   // Register Chart.js components
   Chart.register(
@@ -458,13 +468,18 @@
   async function refreshModels() {
     try {
       loadingModels = true;
-      const res = await fetch('/api/models/switch');
+      // Fetch from UI API proxy (handles auth cookies automatically)
+      const res = await fetch('/api/models');
       if (res.ok) {
         const data = await res.json();
-        availableModels = data.available || [];
+        availableModels = data.available_models || [];
+      } else {
+        // If not authenticated or error, clear the list
+        availableModels = [];
       }
     } catch (e) {
       // Silently handle model fetch error
+      availableModels = [];
     } finally {
       loadingModels = false;
     }
@@ -473,6 +488,7 @@
   async function switchToModel(name) {
     try {
       switching = name;
+      // Call UI API proxy (handles auth cookies automatically)
       const res = await fetch('/api/models/switch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -482,9 +498,15 @@
       if (data.success) {
         await loadGPUData();
         await refreshModels();
+      } else {
+        // Show error if switch fails
+        error = data.error || 'Failed to switch model';
+        setTimeout(() => error = null, 5000);
       }
     } catch (e) {
-      // Silently handle model switch error
+      // Handle model switch error
+      error = 'Failed to switch model. Admin privileges required.';
+      setTimeout(() => error = null, 5000);
     } finally {
       switching = false;
     }
@@ -778,7 +800,7 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             {#each availableModels as model}
               <div class={`p-4 rounded-lg border transition-all duration-200 ${
-                model.name === gpuHealth?.ollama_model 
+                (model.name === gpuHealth?.ollama_model_configured || model.name === gpuHealth?.ollama_model?.replace(' (configured)', ''))
                   ? 'border-primary-300 bg-primary-50 dark:bg-primary-900/20 dark:border-primary-600' 
                   : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
               }`}>
@@ -786,16 +808,16 @@
                   <div class="flex-1">
                     <div class="flex items-center space-x-2">
                       <div class={`w-3 h-3 rounded-full ${
-                        model.name === gpuHealth?.ollama_model ? 'bg-green-500' : 'bg-gray-400'
+                        (model.name === gpuHealth?.ollama_model_configured || model.name === gpuHealth?.ollama_model?.replace(' (configured)', '')) ? 'bg-green-500' : 'bg-gray-400'
                       }`}></div>
                       <h3 class={`text-sm font-medium ${
-                        model.name === gpuHealth?.ollama_model 
+                        (model.name === gpuHealth?.ollama_model_configured || model.name === gpuHealth?.ollama_model?.replace(' (configured)', '')) 
                           ? 'text-primary-700 dark:text-primary-300' 
                           : 'text-gray-900 dark:text-white'
                       }`}>
                         {model.name}
                       </h3>
-                      {#if model.name === gpuHealth?.ollama_model}
+                      {#if model.name === gpuHealth?.ollama_model_configured || model.name === gpuHealth?.ollama_model?.replace(' (configured)', '')}
                         <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200">
                           Active
                         </span>
@@ -836,7 +858,7 @@
                     </div>
                   </div>
                   
-                  {#if model.name !== gpuHealth?.ollama_model}
+                  {#if (model.name !== gpuHealth?.ollama_model_configured && model.name !== gpuHealth?.ollama_model?.replace(' (configured)', '')) && isAdmin}
                     <div class="flex-shrink-0 ml-3">
                       <button 
                         on:click={() => switchToModel(model.name)}
@@ -846,6 +868,12 @@
                       >
                         {switching === model.name ? 'Switching...' : 'Switch'}
                       </button>
+                    </div>
+                  {:else if (model.name !== gpuHealth?.ollama_model_configured && model.name !== gpuHealth?.ollama_model?.replace(' (configured)', '')) && !isAdmin}
+                    <div class="flex-shrink-0 ml-3">
+                      <span class="px-3 py-1 text-xs font-medium text-gray-400 dark:text-gray-500" title="Admin privileges required to switch models">
+                        Switch (Admin Only)
+                      </span>
                     </div>
                   {/if}
                 </div>
@@ -863,12 +891,12 @@
               No Models Available
             </h3>
             <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              No Ollama models found. Download models to get started.
+              No Ollama models found. Please ensure Ollama is running and models are installed.
             </p>
             <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 max-w-md mx-auto">
               <p class="text-xs text-gray-600 dark:text-gray-400 mb-2">Example commands to download models:</p>
               <code class="text-xs bg-white dark:bg-gray-700 px-2 py-1 rounded block mb-1 text-left">
-                ollama pull qwen2.5:7b
+                ollama pull llama3.2:3b
               </code>
               <code class="text-xs bg-white dark:bg-gray-700 px-2 py-1 rounded block text-left">
                 ollama pull llama3.1:8b

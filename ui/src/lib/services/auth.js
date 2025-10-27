@@ -2,18 +2,18 @@
  * Authentication API service
  */
 
-const API_BASE = 'http://localhost:8000';
+// Use frontend API proxy to handle cookies properly
+const API_BASE = '/api/auth';
 
 /**
  * Register a new user
  */
 export async function register(username, email, password, fullName = null) {
-  const response = await fetch(`${API_BASE}/auth/register`, {
+  const response = await fetch(`${API_BASE}/register`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    credentials: 'include', // Important: include cookies
     body: JSON.stringify({
       username,
       email,
@@ -34,12 +34,11 @@ export async function register(username, email, password, fullName = null) {
  * Login user
  */
 export async function login(username, password) {
-  const response = await fetch(`${API_BASE}/auth/login`, {
+  const response = await fetch(`${API_BASE}/login`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    credentials: 'include', // Important: include cookies
     body: JSON.stringify({
       username,
       password,
@@ -58,9 +57,8 @@ export async function login(username, password) {
  * Logout user
  */
 export async function logout() {
-  const response = await fetch(`${API_BASE}/auth/logout`, {
+  const response = await fetch(`${API_BASE}/logout`, {
     method: 'POST',
-    credentials: 'include', // Important: include cookies
   });
   
   if (!response.ok) {
@@ -74,9 +72,7 @@ export async function logout() {
  * Get current user information
  */
 export async function getCurrentUser() {
-  const response = await fetch(`${API_BASE}/auth/me`, {
-    credentials: 'include', // Important: include cookies
-  });
+  const response = await fetch(`${API_BASE}/me`, {});
   
   if (!response.ok) {
     if (response.status === 401) {

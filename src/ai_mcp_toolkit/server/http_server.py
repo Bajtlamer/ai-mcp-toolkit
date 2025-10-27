@@ -23,6 +23,7 @@ from ..utils.gpu_monitor import get_gpu_monitor, check_gpu_health
 from ..managers.resource_manager import ResourceManager
 from ..managers.user_manager import UserManager
 from ..managers.session_manager import SessionManager
+from ..managers.conversation_manager import ConversationManager
 from ..models.documents import ResourceType, User, UserRole
 from ..models.database import db_manager
 from ..utils.audit import AuditLogger
@@ -61,7 +62,7 @@ class ChatMessage(BaseModel):
 class ChatCompletionRequest(BaseModel):
     """Chat completion request model."""
     messages: List[ChatMessage]
-    model: Optional[str] = "qwen2.5:14b"
+    model: Optional[str] = None
     temperature: Optional[float] = 0.7
     max_tokens: Optional[int] = 2000
     stream: Optional[bool] = False
@@ -135,6 +136,42 @@ class UserResponse(BaseModel):
     last_login: Optional[str] = None
 
 
+class ConversationCreate(BaseModel):
+    """Request model for creating a conversation."""
+    title: str = "New Conversation"
+    messages: Optional[List[Dict[str, Any]]] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class ConversationUpdate(BaseModel):
+    """Request model for updating a conversation."""
+    title: Optional[str] = None
+    messages: Optional[List[Dict[str, Any]]] = None
+    metadata: Optional[Dict[str, Any]] = None
+    status: Optional[str] = None
+
+
+class MessageAdd(BaseModel):
+    """Request model for adding a message to conversation."""
+    role: str
+    content: str
+    timestamp: Optional[str] = None
+    metrics: Optional[Dict[str, Any]] = None
+    model: Optional[str] = None
+
+
+class ConversationResponse(BaseModel):
+    """Response model for conversation data."""
+    id: str
+    user_id: str
+    title: str
+    messages: List[Dict[str, Any]]
+    status: str
+    metadata: Dict[str, Any]
+    created_at: str
+    updated_at: str
+
+
 class HTTPServer:
     """HTTP server that wraps MCP functionality."""
 
@@ -145,6 +182,7 @@ class HTTPServer:
         self.resource_manager = ResourceManager()
         self.user_manager = UserManager()
         self.session_manager = SessionManager()
+        self.conversation_manager = ConversationManager()
         self.app = None
         self.logger = get_logger(__name__, level=self.config.log_level)
 
@@ -364,6 +402,15 @@ class HTTPServer:
             """Health check endpoint."""
             return {"status": "healthy", "timestamp": asyncio.get_event_loop().time()}
         
+        # Current model configuration (public)
+        @app.get("/model/current")
+        async def get_current_model():
+            """Get currently configured model (public endpoint)."""
+            return {
+                "model": self.config.ollama_model,
+                "gpu_backend": self.config.gpu_backend
+            }
+        
         # Database health check endpoint
         @app.get("/health/database")
         async def database_health_check():
@@ -542,6 +589,157 @@ class HTTPServer:
                 }
             except Exception as e:
                 self.logger.error(f"Error getting GPU recommendations: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        # Ollama models endpoint (all authenticated users can view)
+        @app.get("/ollama/models")
+        async def list_ollama_models(user: User = Depends(require_auth)):
+            """List available Ollama models (all authenticated users can view)."""
+            try:
+                from ..models.ollama_client import OllamaClient
+                
+                async with OllamaClient(self.config) as client:
+                    models = await client.list_models()
+                    
+                    return {
+                        "success": True,
+                        "current_model": self.config.ollama_model,
+                        "available_models": models,
+                        "count": len(models)
+                    }
+            except Exception as e:
+                self.logger.error(f"Error listing Ollama models: {e}", exc_info=True)
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "current_model": self.config.ollama_model,
+                    "available_models": [],
+                    "count": 0
+                }
+        
+        # GPU backend configuration endpoint (admin only)
+        @app.get("/gpu/backend")
+        async def get_gpu_backend(user: User = Depends(require_admin)):
+            """Get current GPU backend configuration (admin only)."""
+            return {
+                "success": True,
+                "gpu_backend": self.config.gpu_backend,
+                "available_backends": ["auto", "cuda", "metal", "cpu"],
+                "description": {
+                    "auto": "Auto-detect (tries CUDA first, then Metal, fallback to CPU)",
+                    "cuda": "NVIDIA CUDA (requires CUDA-capable GPU and drivers)",
+                    "metal": "Apple Metal (for Apple Silicon Macs)",
+                    "cpu": "CPU only (no GPU acceleration)"
+                }
+            }
+        
+        @app.post("/gpu/backend")
+        async def set_gpu_backend(
+            request: Dict[str, Any],
+            user: User = Depends(require_admin)
+        ):
+            """Set GPU backend configuration (admin only)."""
+            try:
+                backend = request.get("backend")
+                valid_backends = ["auto", "cuda", "metal", "cpu"]
+                
+                if not backend:
+                    raise HTTPException(status_code=400, detail="Backend is required")
+                
+                if backend not in valid_backends:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid backend '{backend}'. Must be one of: {', '.join(valid_backends)}"
+                    )
+                
+                old_backend = self.config.gpu_backend
+                self.config.gpu_backend = backend
+                
+                self.logger.info(f"Admin {user.username} changed GPU backend from {old_backend} to {backend}")
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="gpu.backend.change",
+                    method="POST",
+                    endpoint="/gpu/backend",
+                    status_code=200,
+                    resource_type="configuration",
+                    resource_id="gpu_backend",
+                    request_data={"backend": backend, "previous_backend": old_backend}
+                )
+                
+                return {
+                    "success": True,
+                    "message": f"GPU backend changed to: {backend}",
+                    "previous_backend": old_backend,
+                    "current_backend": backend,
+                    "note": "Backend changed in memory. To persist across restarts, update GPU_BACKEND environment variable. Ollama will automatically use the appropriate backend."
+                }
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error setting GPU backend: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        # Switch Ollama model endpoint (admin only)
+        @app.post("/ollama/models/switch")
+        async def switch_ollama_model(
+            request: Dict[str, Any],
+            user: User = Depends(require_admin)
+        ):
+            """Switch active Ollama model (admin only)."""
+            try:
+                model_name = request.get("model")
+                if not model_name:
+                    raise HTTPException(status_code=400, detail="Model name is required")
+                
+                from ..models.ollama_client import OllamaClient
+                
+                # Verify model exists
+                async with OllamaClient(self.config) as client:
+                    models = await client.list_models()
+                    # Extract model names from OllamaModel dataclass objects
+                    model_names = [m.name for m in models]
+                    
+                    if model_name not in model_names:
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Model '{model_name}' not found. Available models: {', '.join(model_names)}"
+                        )
+                
+                # Update config in memory
+                old_model = self.config.ollama_model
+                self.config.ollama_model = model_name
+                
+                # Log the change
+                self.logger.info(f"Admin {user.username} switched model from {old_model} to {model_name}")
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="model.switch",
+                    method="POST",
+                    endpoint="/ollama/models/switch",
+                    status_code=200,
+                    resource_type="model",
+                    resource_id=model_name,
+                    request_data={"model": model_name, "previous_model": old_model}
+                )
+                
+                return {
+                    "success": True,
+                    "message": f"Successfully switched to model: {model_name}",
+                    "previous_model": old_model,
+                    "current_model": model_name,
+                    "note": "Model changed in memory. To persist across restarts, update OLLAMA_MODEL environment variable or config file."
+                }
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error switching model: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
         # Chat completions endpoint (requires auth, model selection admin-only)
@@ -868,6 +1066,292 @@ class HTTPServer:
                 self.logger.error(f"Error counting resources: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
         
+        # Conversation Management Endpoints (all require auth)
+        
+        @app.get("/conversations", response_model=List[ConversationResponse])
+        async def list_conversations(
+            user: User = Depends(require_auth),
+            limit: int = 100,
+            offset: int = 0
+        ):
+            """List all conversations for the authenticated user."""
+            try:
+                conversations = await self.conversation_manager.list_conversations(
+                    user_id=str(user.id),
+                    limit=limit,
+                    offset=offset
+                )
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="conversations.list",
+                    method="GET",
+                    endpoint="/conversations",
+                    status_code=200,
+                    resource_type="conversations"
+                )
+                
+                return [
+                    ConversationResponse(
+                        id=str(c.id),
+                        user_id=c.user_id,
+                        title=c.title,
+                        messages=c.messages,
+                        status=c.status,
+                        metadata=c.metadata,
+                        created_at=c.created_at.isoformat(),
+                        updated_at=c.updated_at.isoformat()
+                    )
+                    for c in conversations
+                ]
+                
+            except Exception as e:
+                self.logger.error(f"Error listing conversations: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.get("/conversations/{conversation_id}", response_model=ConversationResponse)
+        async def get_conversation(
+            conversation_id: str,
+            user: User = Depends(require_auth)
+        ):
+            """Get a specific conversation by ID."""
+            try:
+                conversation = await self.conversation_manager.get_conversation(
+                    conversation_id=conversation_id,
+                    user_id=str(user.id)
+                )
+                
+                if not conversation:
+                    raise HTTPException(status_code=404, detail="Conversation not found")
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="conversations.get",
+                    method="GET",
+                    endpoint=f"/conversations/{conversation_id}",
+                    status_code=200,
+                    resource_type="conversation",
+                    resource_id=conversation_id
+                )
+                
+                return ConversationResponse(
+                    id=str(conversation.id),
+                    user_id=conversation.user_id,
+                    title=conversation.title,
+                    messages=conversation.messages,
+                    status=conversation.status,
+                    metadata=conversation.metadata,
+                    created_at=conversation.created_at.isoformat(),
+                    updated_at=conversation.updated_at.isoformat()
+                )
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error getting conversation {conversation_id}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.post("/conversations", response_model=ConversationResponse, status_code=201)
+        async def create_conversation(
+            request: ConversationCreate,
+            user: User = Depends(require_auth)
+        ):
+            """Create a new conversation."""
+            try:
+                conversation = await self.conversation_manager.create_conversation(
+                    user_id=str(user.id),
+                    title=request.title,
+                    messages=request.messages,
+                    metadata=request.metadata
+                )
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="conversations.create",
+                    method="POST",
+                    endpoint="/conversations",
+                    status_code=201,
+                    resource_type="conversation",
+                    resource_id=str(conversation.id),
+                    request_data={"title": request.title}
+                )
+                
+                self.logger.info(f"Created conversation {conversation.id} for user {user.username}")
+                
+                return ConversationResponse(
+                    id=str(conversation.id),
+                    user_id=conversation.user_id,
+                    title=conversation.title,
+                    messages=conversation.messages,
+                    status=conversation.status,
+                    metadata=conversation.metadata,
+                    created_at=conversation.created_at.isoformat(),
+                    updated_at=conversation.updated_at.isoformat()
+                )
+                
+            except Exception as e:
+                self.logger.error(f"Error creating conversation: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.put("/conversations/{conversation_id}", response_model=ConversationResponse)
+        async def update_conversation(
+            conversation_id: str,
+            request: ConversationUpdate,
+            user: User = Depends(require_auth)
+        ):
+            """Update an existing conversation."""
+            try:
+                conversation = await self.conversation_manager.update_conversation(
+                    conversation_id=conversation_id,
+                    user_id=str(user.id),
+                    title=request.title,
+                    messages=request.messages,
+                    metadata=request.metadata,
+                    status=request.status
+                )
+                
+                if not conversation:
+                    raise HTTPException(status_code=404, detail="Conversation not found")
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="conversations.update",
+                    method="PUT",
+                    endpoint=f"/conversations/{conversation_id}",
+                    status_code=200,
+                    resource_type="conversation",
+                    resource_id=conversation_id
+                )
+                
+                self.logger.info(f"Updated conversation {conversation_id}")
+                
+                return ConversationResponse(
+                    id=str(conversation.id),
+                    user_id=conversation.user_id,
+                    title=conversation.title,
+                    messages=conversation.messages,
+                    status=conversation.status,
+                    metadata=conversation.metadata,
+                    created_at=conversation.created_at.isoformat(),
+                    updated_at=conversation.updated_at.isoformat()
+                )
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error updating conversation {conversation_id}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.delete("/conversations/{conversation_id}", status_code=204)
+        async def delete_conversation(
+            conversation_id: str,
+            user: User = Depends(require_auth)
+        ):
+            """Delete a conversation."""
+            try:
+                success = await self.conversation_manager.delete_conversation(
+                    conversation_id=conversation_id,
+                    user_id=str(user.id)
+                )
+                
+                if not success:
+                    raise HTTPException(status_code=404, detail="Conversation not found")
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="conversations.delete",
+                    method="DELETE",
+                    endpoint=f"/conversations/{conversation_id}",
+                    status_code=204,
+                    resource_type="conversation",
+                    resource_id=conversation_id
+                )
+                
+                self.logger.info(f"Deleted conversation {conversation_id}")
+                return None
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error deleting conversation {conversation_id}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.post("/conversations/{conversation_id}/messages", response_model=ConversationResponse)
+        async def add_message(
+            conversation_id: str,
+            message: MessageAdd,
+            user: User = Depends(require_auth)
+        ):
+            """Add a message to a conversation."""
+            try:
+                message_dict = {
+                    "role": message.role,
+                    "content": message.content,
+                    "timestamp": message.timestamp
+                }
+                
+                # Preserve metrics and model if provided
+                if message.metrics:
+                    message_dict["metrics"] = message.metrics
+                if message.model:
+                    message_dict["model"] = message.model
+                
+                conversation = await self.conversation_manager.add_message(
+                    conversation_id=conversation_id,
+                    user_id=str(user.id),
+                    message=message_dict
+                )
+                
+                if not conversation:
+                    raise HTTPException(status_code=404, detail="Conversation not found")
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="conversations.add_message",
+                    method="POST",
+                    endpoint=f"/conversations/{conversation_id}/messages",
+                    status_code=200,
+                    resource_type="conversation",
+                    resource_id=conversation_id
+                )
+                
+                return ConversationResponse(
+                    id=str(conversation.id),
+                    user_id=conversation.user_id,
+                    title=conversation.title,
+                    messages=conversation.messages,
+                    status=conversation.status,
+                    metadata=conversation.metadata,
+                    created_at=conversation.created_at.isoformat(),
+                    updated_at=conversation.updated_at.isoformat()
+                )
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error adding message to conversation {conversation_id}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.get("/conversations/stats/count")
+        async def get_conversation_count(user: User = Depends(require_auth)):
+            """Get count of conversations for the user."""
+            try:
+                count = await self.conversation_manager.get_conversation_count(
+                    user_id=str(user.id)
+                )
+                
+                return {"count": count}
+                
+            except Exception as e:
+                self.logger.error(f"Error counting conversations: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
         # Root endpoint with API info
         @app.get("/")
         async def root():
@@ -884,6 +1368,13 @@ class HTTPServer:
                     "status": "/status",
                     "agents": "/agents",
                     "chat": "/chat/completions",
+                    "conversations": "/conversations",
+                    "conversations_create": "/conversations (POST)",
+                    "conversations_get": "/conversations/{id} (GET)",
+                    "conversations_update": "/conversations/{id} (PUT)",
+                    "conversations_delete": "/conversations/{id} (DELETE)",
+                    "conversations_add_message": "/conversations/{id}/messages (POST)",
+                    "conversations_count": "/conversations/stats/count",
                     "resources": "/resources",
                     "resources_create": "/resources (POST)",
                     "resources_get": "/resources/{uri} (GET)",
@@ -894,6 +1385,7 @@ class HTTPServer:
                     "gpu_health": "/gpu/health",
                     "gpu_metrics": "/gpu/metrics", 
                     "gpu_recommendations": "/gpu/recommendations",
+                    "ollama_models": "/ollama/models (GET, admin only)",
                     "docs": "/docs"
                 }
             }

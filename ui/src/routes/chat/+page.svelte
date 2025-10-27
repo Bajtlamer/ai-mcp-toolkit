@@ -141,28 +141,40 @@
   }
 
   async function sendMessage() {
-    if (!inputText.trim() || isLoading || !$currentConversation) return;
+    if (!inputText.trim() || isLoading) return;
     if (!serverStatus.canChat) {
       showNotification('error', 'No AI service available. Please start MCP server or Ollama.');
       return;
+    }
+    
+    // Auto-create conversation if none exists
+    if (!$currentConversation) {
+      const newConv = await conversations.createConversation('New Conversation');
+      currentConversationId.set(newConv.id);
+      await tick(); // Wait for store to update
     }
 
     const messageContent = inputText.trim();
     inputText = '';
     error = null;
+    
+    // Capture conversation ID before async operations
+    const conversationId = $currentConversation.id;
 
     // Create abort controller for cancellation
     currentAbortController = new AbortController();
 
     // Add user message
     const userMessage = {
+      id: `user-${Date.now()}-${Math.random()}`,
       type: 'user',
       content: messageContent,
       timestamp: new Date()
     };
     
-    conversations.addMessage($currentConversation.id, userMessage);
-    conversations.setConversationLoading($currentConversation.id, true);
+    // Add message and then set loading (addMessage overwrites isLoading)
+    await conversations.addMessage(conversationId, userMessage);
+    conversations.setConversationLoading(conversationId, true);
     
     // Ensure scroll to bottom after user message is added
     tick().then(() => scrollToBottom(true));
@@ -171,11 +183,12 @@
       // Track thinking time
       const startTime = Date.now();
       
-      // Get AI response with conversation history
+      // Get AI response with conversation history (get fresh messages from store)
+      const currentConv = $currentConversation;
       const response = await chatAPI.sendMessage(
         messageContent, 
-        $currentConversation.id, 
-        $currentConversation.messages,
+        conversationId, 
+        currentConv.messages,
         currentAbortController.signal
       );
       
@@ -193,14 +206,16 @@
       }
       
       const assistantMessage = {
+        id: `assistant-${Date.now()}-${Math.random()}`,
         type: 'assistant',
         content: assistantContent,
         timestamp: new Date(),
+        model: serverStatus.model?.name || 'AI Assistant', // Store model used
         metrics: response?.metrics // Add timing metrics
       };
       
-      conversations.addMessage($currentConversation.id, assistantMessage);
-      conversations.addThinkingTime($currentConversation.id, thinkingTime);
+      await conversations.addMessage(conversationId, assistantMessage);
+      await conversations.addThinkingTime(conversationId, thinkingTime);
       
       // Ensure scroll to bottom after assistant response
       tick().then(() => scrollToBottom(true));
@@ -209,7 +224,7 @@
         // Mark the last user message as cancelled
         conversations.update(convs => 
           convs.map(conv => {
-            if (conv.id === $currentConversation.id && conv.messages.length > 0) {
+            if (conv.id === conversationId && conv.messages.length > 0) {
               const messages = [...conv.messages];
               const lastMessage = messages[messages.length - 1];
               if (lastMessage.type === 'user') {
@@ -225,7 +240,7 @@
         error = err.message || 'Failed to get AI response';
       }
     } finally {
-      conversations.setConversationLoading($currentConversation.id, false);
+      conversations.setConversationLoading(conversationId, false);
       currentAbortController = null; // Clear the abort controller
     }
   }
@@ -280,6 +295,7 @@
         type: 'assistant',
         content: regeneratedContent,
         timestamp: new Date(),
+        model: serverStatus.model?.name || 'AI Assistant', // Store model used
         metrics: response?.metrics
       };
       
@@ -559,9 +575,9 @@
                           <Bot size={16} class="text-white" />
                         </div>
                         <div class="flex-1 min-w-0 pr-4">
-                          <div class="flex items-center space-x-2 mb-3">
+                          <div class="flex items-center flex-wrap gap-2 mb-3">
                             <span class="text-sm font-medium text-gray-900 dark:text-white">
-                              {serverStatus.model?.name || 'AI Assistant'}
+                              {message.model || serverStatus.model?.name || 'AI Assistant'}
                             </span>
                             <span class="text-xs text-gray-500 dark:text-gray-400">
                               {formatTimestamp(message.timestamp)}
@@ -572,7 +588,12 @@
                               </span>
                               {#if message.metrics.tokensPerSecond > 0}
                                 <span class="text-xs text-gray-500 dark:text-gray-400">
-                                  • {message.metrics.tokensPerSecond}t/s
+                                  • {message.metrics.tokensPerSecond.toFixed(1)} t/s
+                                </span>
+                              {/if}
+                              {#if message.metrics.promptTokens > 0}
+                                <span class="text-xs text-gray-500 dark:text-gray-400">
+                                  • {message.metrics.promptTokens} in / {message.metrics.completionTokens} out
                                 </span>
                               {/if}
                             {/if}

@@ -25,6 +25,9 @@ class Config:
     ollama_port: int = field(default_factory=lambda: int(os.getenv("OLLAMA_PORT", "11434")))
     ollama_model: str = field(default_factory=lambda: os.getenv("OLLAMA_MODEL", "qwen2.5:14b"))
     
+    # GPU backend configuration
+    gpu_backend: str = field(default_factory=lambda: os.getenv("GPU_BACKEND", "auto"))  # auto, cuda, metal, cpu
+    
     # UI configuration
     ui_host: str = field(default_factory=lambda: os.getenv("UI_HOST", "localhost"))
     ui_port: int = field(default_factory=lambda: int(os.getenv("UI_PORT", "8501")))

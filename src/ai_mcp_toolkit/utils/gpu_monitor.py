@@ -196,25 +196,28 @@ class GPUMonitor:
             # Skip header line and look for active models
             for line in lines[1:]:
                 parts = line.split()
-                if len(parts) >= 5:
+                if len(parts) >= 7:
                     model_name = parts[0]
-                    model_size = parts[2]
-                    processor = " ".join(parts[3:-2])  # Handle multi-word processor info
+                    # Size is parts[2] + parts[3] (e.g., "6.2" + "GB")
+                    model_size = f"{parts[2]} {parts[3]}"
+                    # Processor is parts[4] + parts[5] (e.g., "100%" + "GPU")
+                    processor = f"{parts[4]} {parts[5]}"
+                    context = parts[6]
                     
                     # Extract GPU memory usage from size
                     gpu_memory = 0
                     if "GB" in model_size:
-                        gpu_memory = int(float(model_size.replace("GB", "")) * 1024)
+                        gpu_memory = int(float(parts[2]) * 1024)
                     elif "MB" in model_size:
-                        gpu_memory = int(model_size.replace("MB", ""))
+                        gpu_memory = int(float(parts[2]))
                     
                     return OllamaGPUStatus(
                         model_name=model_name,
                         model_size=model_size,
                         processor=processor,
                         gpu_memory_used=gpu_memory,
-                        is_gpu_accelerated="GPU" in processor,
-                        context_length=int(parts[-2]) if parts[-2].isdigit() else 4096
+                        is_gpu_accelerated="GPU" in processor.upper(),
+                        context_length=int(context) if context.isdigit() else 4096
                     )
             
             return None

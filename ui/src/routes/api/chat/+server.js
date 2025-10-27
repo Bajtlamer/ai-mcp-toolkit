@@ -6,15 +6,26 @@ const BACKEND_PORT = process.env.MCP_PORT || '8000';
 const BACKEND_URL = `http://${BACKEND_HOST}:${BACKEND_PORT}`;
 
 /** @type {import('./$types').RequestHandler} */
-export async function POST({ request }) {
+export async function POST({ request, cookies }) {
   try {
     const { message, model, temperature, max_tokens } = await request.json();
     
-    // Forward the request to the backend MCP server
+    // Get session cookie to forward to backend
+    const sessionId = cookies.get('session_id');
+    
+    if (!sessionId) {
+      return json({ 
+        success: false, 
+        error: 'Authentication required. Please log in.' 
+      }, { status: 401 });
+    }
+    
+    // Forward the request to the backend MCP server with auth cookie
     const response = await fetch(`${BACKEND_URL}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Cookie': `session_id=${sessionId}`
       },
       body: JSON.stringify({
         messages: [

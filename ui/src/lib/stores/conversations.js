@@ -1,308 +1,327 @@
-import { writable, derived } from 'svelte/store';
-import { browser } from '$app/environment';
-
-// Utility function to generate unique IDs
-function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2);
-}
+import { writable, derived, get } from 'svelte/store';
+import {
+	listConversations,
+	getConversation,
+	createConversation as apiCreateConversation,
+	updateConversation as apiUpdateConversation,
+	deleteConversation as apiDeleteConversation,
+	addMessage as apiAddMessage,
+	getConversationCount
+} from '$lib/api/conversations';
 
 // Utility function to generate conversation titles from first message
 function generateTitle(firstMessage) {
-  if (!firstMessage) return 'New Conversation';
-  
-  const content = firstMessage.content || '';
-  const words = content.trim().split(' ');
-  
-  if (words.length <= 6) {
-    return content.slice(0, 50);
-  }
-  
-  return words.slice(0, 6).join(' ') + '...';
+	if (!firstMessage) return 'New Conversation';
+
+	const content = firstMessage.content || '';
+	const words = content.trim().split(' ');
+
+	if (words.length <= 6) {
+		return content.slice(0, 50);
+	}
+
+	return words.slice(0, 6).join(' ') + '...';
 }
 
-// Default welcome message
-const createWelcomeMessage = () => ({
-  id: generateId(),
-  type: 'assistant',
-  content: "What can I do for you today?",
-  timestamp: new Date(),
-  isLoading: false
-});
+// Convert backend conversation format to frontend format
+function convertToFrontendFormat(backendConv) {
+	return {
+		id: backendConv.id,
+		title: backendConv.title,
+messages: backendConv.messages.map((msg, index) => ({
+		...msg,
+		id: msg.id || `${msg.role}-${msg.timestamp}-${index}`,
+		timestamp: new Date(msg.timestamp),
+		type: msg.role === 'assistant' ? 'assistant' : msg.role === 'system' ? 'system' : 'user',
+		// Preserve metrics and model from backend
+		metrics: msg.metrics || null,
+		model: msg.model || null
+	})),
+		createdAt: new Date(backendConv.created_at),
+		updatedAt: new Date(backendConv.updated_at),
+		isLoading: false,
+		// Thinking time metrics from metadata
+		thinkingTimes: backendConv.metadata?.thinkingTimes || [],
+		averageThinkingTime: backendConv.metadata?.averageThinkingTime || 0,
+		totalThinkingTime: backendConv.metadata?.totalThinkingTime || 0,
+		responseCount: backendConv.metadata?.responseCount || 0
+	};
+}
 
-// Create initial conversation
-const createNewConversation = () => ({
-  id: generateId(),
-  title: 'New Conversation',
-  messages: [createWelcomeMessage()],
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  isLoading: false,
-  // Thinking time metrics
-  thinkingTimes: [], // Array of response times in seconds
-  averageThinkingTime: 0, // Average response time
-  totalThinkingTime: 0, // Total time spent thinking
-  responseCount: 0 // Number of AI responses
-});
+// Convert frontend message format to backend format
+function convertMessageToBackend(message) {
+	const backendMsg = {
+		role: message.type === 'assistant' ? 'assistant' : message.type === 'system' ? 'system' : 'user',
+		content: typeof message.content === 'string' ? message.content : JSON.stringify(message.content),
+		timestamp: message.timestamp ? message.timestamp.toISOString() : new Date().toISOString()
+	};
+	
+	// Preserve metrics and model for assistant messages
+	if (message.metrics) {
+		backendMsg.metrics = message.metrics;
+	}
+	if (message.model) {
+		backendMsg.model = message.model;
+	}
+	
+	return backendMsg;
+}
 
-// Conversations store - array of conversation objects
+// Conversations store - array of conversation objects from backend
 function createConversationsStore() {
-  let initialConversations = [createNewConversation()];
-  
-  // Load from localStorage if available
-  if (browser) {
-    try {
-      const stored = localStorage.getItem('ai-chat-conversations');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        // Convert date strings back to Date objects and ensure thinking time metrics
-        initialConversations = parsed.map(conv => ({
-          ...conv,
-          createdAt: new Date(conv.createdAt),
-          updatedAt: new Date(conv.updatedAt),
-          // Ensure thinking time metrics exist for backward compatibility
-          thinkingTimes: conv.thinkingTimes || [],
-          averageThinkingTime: conv.averageThinkingTime || 0,
-          totalThinkingTime: conv.totalThinkingTime || 0,
-          responseCount: conv.responseCount || 0,
-          messages: conv.messages.map(msg => ({
-            ...msg,
-            timestamp: new Date(msg.timestamp),
-            // Ensure content is always a string
-            content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
-          }))
-        }));
-        
-        // Ensure at least one conversation exists
-        if (initialConversations.length === 0) {
-          initialConversations = [createNewConversation()];
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load conversations from localStorage:', error);
-      initialConversations = [createNewConversation()];
-    }
-  }
+	const { subscribe, set, update } = writable([]);
+	let isInitialized = false;
 
-  const { subscribe, set, update } = writable(initialConversations);
+	return {
+		subscribe,
+		set,
+		update,
 
-  // Save to localStorage whenever conversations change
-  const saveToStorage = (conversations) => {
-    if (browser) {
-      try {
-        localStorage.setItem('ai-chat-conversations', JSON.stringify(conversations));
-      } catch (error) {
-        console.error('Failed to save conversations to localStorage:', error);
-      }
-    }
-  };
+		// Load conversations from backend
+		loadConversations: async () => {
+			try {
+				const backendConversations = await listConversations();
+				const frontendConversations = backendConversations.map(convertToFrontendFormat);
+				set(frontendConversations);
+				isInitialized = true;
+				return frontendConversations;
+			} catch (error) {
+				console.error('Failed to load conversations from backend:', error);
+				// Set empty array on error
+				set([]);
+				throw error;
+			}
+		},
 
-  return {
-    subscribe,
-    set: (value) => {
-      set(value);
-      saveToStorage(value);
-    },
-    update: (fn) => {
-      update((conversations) => {
-        const newConversations = fn(conversations);
-        saveToStorage(newConversations);
-        return newConversations;
-      });
-    },
+		// Ensure conversations are loaded
+		ensureLoaded: async () => {
+			if (!isInitialized) {
+				await conversations.loadConversations();
+			}
+		},
 
-    // Add a new conversation
-    createConversation: () => {
-      const newConversation = createNewConversation();
-      update(conversations => {
-        const updated = [newConversation, ...conversations];
-        saveToStorage(updated);
-        return updated;
-      });
-      return newConversation.id;
-    },
+		// Add a new conversation
+		createConversation: async (title = 'New Conversation') => {
+			try {
+				const backendConv = await apiCreateConversation(title, [], {});
+				const frontendConv = convertToFrontendFormat(backendConv);
+				update(conversations => [frontendConv, ...conversations]);
+				return frontendConv;
+			} catch (error) {
+				console.error('Failed to create conversation:', error);
+				throw error;
+			}
+		},
 
-    // Delete a conversation
-    deleteConversation: (conversationId) => {
-      update(conversations => {
-        const filtered = conversations.filter(conv => conv.id !== conversationId);
-        // Ensure at least one conversation exists
-        const updated = filtered.length > 0 ? filtered : [createNewConversation()];
-        saveToStorage(updated);
-        return updated;
-      });
-    },
+		// Delete a conversation
+		deleteConversation: async (conversationId) => {
+			try {
+				await apiDeleteConversation(conversationId);
+				update(conversations => conversations.filter(conv => conv.id !== conversationId));
+			} catch (error) {
+				console.error('Failed to delete conversation:', error);
+				throw error;
+			}
+		},
 
-    // Update conversation title
-    updateTitle: (conversationId, newTitle) => {
-      update(conversations => {
-        const updated = conversations.map(conv =>
-          conv.id === conversationId
-            ? { ...conv, title: newTitle, updatedAt: new Date() }
-            : conv
-        );
-        saveToStorage(updated);
-        return updated;
-      });
-    },
+		// Update conversation title
+		updateTitle: async (conversationId, newTitle) => {
+			try {
+				const backendConv = await apiUpdateConversation(conversationId, { title: newTitle });
+				const frontendConv = convertToFrontendFormat(backendConv);
+				update(conversations => conversations.map(conv =>
+					conv.id === conversationId ? frontendConv : conv
+				));
+			} catch (error) {
+				console.error('Failed to update title:', error);
+				throw error;
+			}
+		},
 
-    // Add message to conversation
-    addMessage: (conversationId, message) => {
-      update(conversations => {
-        const updated = conversations.map(conv => {
-          if (conv.id === conversationId) {
-            // Ensure content is always a string
-            const validatedMessage = {
-              ...message,
-              id: generateId(),
-              content: typeof message.content === 'string' ? message.content : JSON.stringify(message.content)
-            };
-            const newMessages = [...conv.messages, validatedMessage];
-            let title = conv.title;
-            
-            // Auto-generate title from first user message
-            if (conv.title === 'New Conversation' && message.type === 'user') {
-              title = generateTitle(message);
-            }
-            
-            return {
-              ...conv,
-              messages: newMessages,
-              title,
-              updatedAt: new Date(),
-              isLoading: false
-            };
-          }
-          return conv;
-        });
-        saveToStorage(updated);
-        return updated;
-      });
-    },
+		// Add message to conversation
+		addMessage: async (conversationId, message) => {
+			try {
+				const backendMessage = convertMessageToBackend(message);
+				const backendConv = await apiAddMessage(
+					conversationId,
+					backendMessage
+				);
 
-    // Update last message in conversation
-    updateLastMessage: (conversationId, updates) => {
-      update(conversations => {
-        const updated = conversations.map(conv => {
-          if (conv.id === conversationId && conv.messages.length > 0) {
-            const messages = [...conv.messages];
-            messages[messages.length - 1] = {
-              ...messages[messages.length - 1],
-              ...updates
-            };
-            
-            return {
-              ...conv,
-              messages,
-              updatedAt: new Date()
-            };
-          }
-          return conv;
-        });
-        saveToStorage(updated);
-        return updated;
-      });
-    },
+				// Auto-generate title from first user message if needed
+				if (backendConv.title === 'New Conversation' && message.type === 'user') {
+					const newTitle = generateTitle(message);
+					const updatedConv = await apiUpdateConversation(conversationId, { title: newTitle });
+					const frontendConv = convertToFrontendFormat(updatedConv);
+					update(conversations => conversations.map(conv =>
+						conv.id === conversationId ? frontendConv : conv
+					));
+				} else {
+					const frontendConv = convertToFrontendFormat(backendConv);
+					update(conversations => conversations.map(conv =>
+						conv.id === conversationId ? frontendConv : conv
+					));
+				}
+			} catch (error) {
+				console.error('Failed to add message:', error);
+				throw error;
+			}
+		},
 
-    // Set conversation loading state
-    setConversationLoading: (conversationId, isLoading) => {
-      update(conversations => {
-        const updated = conversations.map(conv =>
-          conv.id === conversationId
-            ? { ...conv, isLoading, updatedAt: new Date() }
-            : conv
-        );
-        saveToStorage(updated);
-        return updated;
-      });
-    },
+		// Update last message in conversation (local only, sync later)
+		updateLastMessage: (conversationId, updates) => {
+			update(conversations => {
+				return conversations.map(conv => {
+					if (conv.id === conversationId && conv.messages.length > 0) {
+						const messages = [...conv.messages];
+						messages[messages.length - 1] = {
+							...messages[messages.length - 1],
+							...updates
+						};
 
-    // Clear all conversations
-    clearAll: () => {
-      const freshConversations = [createNewConversation()];
-      set(freshConversations);
-      saveToStorage(freshConversations);
-    },
+						return {
+							...conv,
+							messages,
+							updatedAt: new Date()
+						};
+					}
+					return conv;
+				});
+			});
+		},
 
-    // Export conversations
-    exportConversations: () => {
-      let conversations;
-      subscribe(value => conversations = value)();
-      return JSON.stringify(conversations, null, 2);
-    },
+		// Sync conversation messages to backend
+		syncMessages: async (conversationId) => {
+			try {
+				const currentConvs = get({ subscribe });
+				const conv = currentConvs.find(c => c.id === conversationId);
+				if (!conv) return;
 
-    // Import conversations
-    importConversations: (jsonData) => {
-      try {
-        const imported = JSON.parse(jsonData);
-        const validConversations = imported.map(conv => ({
-          ...conv,
-          createdAt: new Date(conv.createdAt),
-          updatedAt: new Date(conv.updatedAt),
-          // Ensure thinking time metrics exist
-          thinkingTimes: conv.thinkingTimes || [],
-          averageThinkingTime: conv.averageThinkingTime || 0,
-          totalThinkingTime: conv.totalThinkingTime || 0,
-          responseCount: conv.responseCount || 0,
-          messages: conv.messages.map(msg => ({
-            ...msg,
-            timestamp: new Date(msg.timestamp),
-            // Ensure content is always a string
-            content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
-          }))
-        }));
-        
-        set(validConversations);
-        return true;
-      } catch (error) {
-        console.error('Failed to import conversations:', error);
-        return false;
-      }
-    },
+				const backendMessages = conv.messages.map(convertMessageToBackend);
+				const backendConv = await apiUpdateConversation(conversationId, {
+					messages: backendMessages
+				});
+				const frontendConv = convertToFrontendFormat(backendConv);
+				update(conversations => conversations.map(c =>
+					c.id === conversationId ? frontendConv : c
+				));
+			} catch (error) {
+				console.error('Failed to sync messages:', error);
+				throw error;
+			}
+		},
 
-    // Add thinking time to conversation
-    addThinkingTime: (conversationId, thinkingTimeSeconds) => {
-      update(conversations => {
-        const updated = conversations.map(conv => {
-          if (conv.id === conversationId) {
-            const thinkingTimes = [...(conv.thinkingTimes || []), thinkingTimeSeconds];
-            const totalThinkingTime = (conv.totalThinkingTime || 0) + thinkingTimeSeconds;
-            const responseCount = (conv.responseCount || 0) + 1;
-            const averageThinkingTime = totalThinkingTime / responseCount;
-            
-            return {
-              ...conv,
-              thinkingTimes,
-              totalThinkingTime,
-              responseCount,
-              averageThinkingTime: Math.round(averageThinkingTime * 100) / 100, // Round to 2 decimals
-              updatedAt: new Date()
-            };
-          }
-          return conv;
-        });
-        saveToStorage(updated);
-        return updated;
-      });
-    }
-  };
+		// Set conversation loading state (local only)
+		setConversationLoading: (conversationId, isLoading) => {
+			update(conversations => conversations.map(conv =>
+				conv.id === conversationId
+					? { ...conv, isLoading }
+					: conv
+			));
+		},
+
+		// Clear all conversations (delete all on backend)
+		clearAll: async () => {
+			try {
+				const currentConvs = get({ subscribe });
+				for (const conv of currentConvs) {
+					await apiDeleteConversation(conv.id);
+				}
+				set([]);
+			} catch (error) {
+				console.error('Failed to clear all conversations:', error);
+				throw error;
+			}
+		},
+
+		// Export conversations (from backend)
+		exportConversations: async () => {
+			try {
+				const currentConvs = get({ subscribe });
+				return JSON.stringify(currentConvs, null, 2);
+			} catch (error) {
+				console.error('Failed to export conversations:', error);
+				throw error;
+			}
+		},
+
+		// Import conversations (to backend)
+		importConversations: async (jsonData) => {
+			try {
+				const imported = JSON.parse(jsonData);
+				// Create each conversation on backend
+				for (const conv of imported) {
+					const backendMessages = conv.messages.map(msg => ({
+						role: msg.type === 'assistant' ? 'assistant' : msg.type === 'system' ? 'system' : 'user',
+						content: msg.content,
+						timestamp: msg.timestamp
+					}));
+					await apiCreateConversation(conv.title, backendMessages, {
+						thinkingTimes: conv.thinkingTimes || [],
+						averageThinkingTime: conv.averageThinkingTime || 0,
+						totalThinkingTime: conv.totalThinkingTime || 0,
+						responseCount: conv.responseCount || 0
+					});
+				}
+				// Reload conversations
+				await conversations.loadConversations();
+				return true;
+			} catch (error) {
+				console.error('Failed to import conversations:', error);
+				return false;
+			}
+		},
+
+		// Add thinking time to conversation
+		addThinkingTime: async (conversationId, thinkingTimeSeconds) => {
+			try {
+				const currentConvs = get({ subscribe });
+				const conv = currentConvs.find(c => c.id === conversationId);
+				if (!conv) return;
+
+				const thinkingTimes = [...(conv.thinkingTimes || []), thinkingTimeSeconds];
+				const totalThinkingTime = (conv.totalThinkingTime || 0) + thinkingTimeSeconds;
+				const responseCount = (conv.responseCount || 0) + 1;
+				const averageThinkingTime = totalThinkingTime / responseCount;
+
+				// Update metadata on backend
+				const backendConv = await apiUpdateConversation(conversationId, {
+					metadata: {
+						...conv.metadata,
+						thinkingTimes,
+						totalThinkingTime,
+						responseCount,
+						averageThinkingTime: Math.round(averageThinkingTime * 100) / 100
+					}
+				});
+
+				const frontendConv = convertToFrontendFormat(backendConv);
+				update(conversations => conversations.map(c =>
+					c.id === conversationId ? frontendConv : c
+				));
+			} catch (error) {
+				console.error('Failed to add thinking time:', error);
+				throw error;
+			}
+		}
+	};
 }
 
 // Current conversation ID store
 function createCurrentConversationStore() {
-  const { subscribe, set, update } = writable(null);
+	const { subscribe, set, update } = writable(null);
 
-  return {
-    subscribe,
-    set,
-    update,
-    
-    // Initialize with first conversation
-    init: (conversations) => {
-      if (conversations && conversations.length > 0) {
-        set(conversations[0].id);
-      }
-    }
-  };
+	return {
+		subscribe,
+		set,
+		update,
+
+		// Initialize with first conversation
+		init: (conversations) => {
+			if (conversations && conversations.length > 0) {
+				set(conversations[0].id);
+			}
+		}
+	};
 }
 
 // Create store instances
@@ -311,23 +330,23 @@ export const currentConversationId = createCurrentConversationStore();
 
 // Derived store for current conversation
 export const currentConversation = derived(
-  [conversations, currentConversationId],
-  ([$conversations, $currentConversationId]) => {
-    if (!$currentConversationId) {
-      return $conversations[0] || null;
-    }
-    return $conversations.find(conv => conv.id === $currentConversationId) || $conversations[0] || null;
-  }
+	[conversations, currentConversationId],
+	([$conversations, $currentConversationId]) => {
+		if (!$currentConversationId) {
+			return $conversations[0] || null;
+		}
+		return $conversations.find(conv => conv.id === $currentConversationId) || $conversations[0] || null;
+	}
 );
 
 // Initialize current conversation ID when conversations load
 conversations.subscribe((convs) => {
-  currentConversationId.update(currentId => {
-    if (!currentId && convs.length > 0) {
-      return convs[0].id;
-    }
-    // Check if current conversation still exists
-    const exists = convs.find(conv => conv.id === currentId);
-    return exists ? currentId : (convs[0]?.id || null);
-  });
+	currentConversationId.update(currentId => {
+		if (!currentId && convs.length > 0) {
+			return convs[0].id;
+		}
+		// Check if current conversation still exists
+		const exists = convs.find(conv => conv.id === currentId);
+		return exists ? currentId : (convs[0]?.id || null);
+	});
 });

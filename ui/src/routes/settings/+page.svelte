@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
   import ModelSwitcher from '$lib/components/ModelSwitcher.svelte';
+  import { auth } from '$lib/stores/auth';
 
   let serverConfig = {
     host: 'localhost',
@@ -227,7 +228,8 @@
   </div>
 
   <div class="space-y-8">
-    <!-- Server Configuration -->
+    <!-- Server Configuration (Admin Only) -->
+    {#if $auth.user && $auth.user.role === 'admin'}
     <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
       <div class="flex items-center space-x-3 mb-6">
         <div class="w-8 h-8 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center">
@@ -235,7 +237,7 @@
         </div>
         <div>
           <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Server Configuration</h2>
-          <p class="text-sm text-gray-500 dark:text-gray-400">Configure connection to the MCP server</p>
+          <p class="text-sm text-gray-500 dark:text-gray-400">Configure connection to the MCP server (Admin Only)</p>
         </div>
       </div>
 
@@ -284,21 +286,6 @@
           />
         </div>
 
-        <div class="md:col-span-2">
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Ollama Model
-          </label>
-          <select
-            bind:value={serverConfig.ollamaModel}
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-          >
-            <option value="llama3.2:3b">Llama 3.2 3B</option>
-            <option value="llama3.2:7b">Llama 3.2 7B</option>
-            <option value="llama3.1:8b">Llama 3.1 8B</option>
-            <option value="llama3.1:13b">Llama 3.1 13B</option>
-            <option value="mistral:7b">Mistral 7B</option>
-          </select>
-        </div>
       </div>
 
       <!-- Connection Status -->
@@ -320,21 +307,24 @@
         </div>
       </div>
     </div>
+    {/if}
 
-    <!-- Model Management -->
-    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
-      <div class="flex items-center space-x-3 mb-6">
-        <div class="w-8 h-8 bg-green-100 dark:bg-green-900 rounded-lg flex items-center justify-center">
-          <Server size={18} class="text-green-600 dark:text-green-400" />
+    <!-- Model Management (Admin Only) -->
+    {#if $auth.user && $auth.user.role === 'admin'}
+      <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
+        <div class="flex items-center space-x-3 mb-6">
+          <div class="w-8 h-8 bg-green-100 dark:bg-green-900 rounded-lg flex items-center justify-center">
+            <Server size={18} class="text-green-600 dark:text-green-400" />
+          </div>
+          <div>
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">AI Model Management</h2>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Switch between available AI models (Admin Only)</p>
+          </div>
         </div>
-        <div>
-          <h2 class="text-xl font-semibold text-gray-900 dark:text-white">AI Model Management</h2>
-          <p class="text-sm text-gray-500 dark:text-gray-400">Switch between available AI models</p>
-        </div>
+
+        <ModelSwitcher />
       </div>
-
-      <ModelSwitcher />
-    </div>
+    {/if}
 
     <!-- UI Preferences -->
     <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">

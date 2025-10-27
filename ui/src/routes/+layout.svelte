@@ -8,6 +8,7 @@
   import Sidebar from '$lib/components/Sidebar.svelte';
   import Header from '$lib/components/Header.svelte';
   import { auth } from '$lib/stores/auth';
+  import { conversations } from '$lib/stores/conversations';
   
   let sidebarOpen = false;
   let isAuthPage = false;
@@ -28,6 +29,15 @@
   onMount(async () => {
     // Initialize auth state
     const user = await auth.init();
+    
+    // Load conversations if authenticated
+    if (user) {
+      try {
+        await conversations.loadConversations();
+      } catch (error) {
+        console.error('Failed to load conversations:', error);
+      }
+    }
     
     // Redirect to login if not authenticated and not on public route
     if (!user && !isAuthPage) {

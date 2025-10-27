@@ -24,7 +24,8 @@ export class ChatAPI {
         body: JSON.stringify({
           message: messageWithInstruction,
           conversationHistory: conversationHistory,
-          model: await this.getActiveModel(),
+          // Don't send model - let backend use its configured model
+          // model: await this.getActiveModel(),
           temperature: 0.7,
           max_tokens: 2000
         }),

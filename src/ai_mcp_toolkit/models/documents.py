@@ -149,6 +149,7 @@ class User(Document):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     last_login: Optional[datetime] = None
+    preferences: Dict[str, Any] = Field(default_factory=dict)  # UI theme, agent settings, etc.
     metadata: Dict[str, Any] = Field(default_factory=dict)
     
     class Settings:
@@ -235,21 +236,25 @@ class Message(Document):
 class Conversation(Document):
     """Conversation document model."""
     
+    user_id: Indexed(str)  # Owner of the conversation
     title: str
     description: Optional[str] = None
+    messages: List[Dict[str, Any]] = Field(default_factory=list)  # Store messages directly
     participants: List[str] = Field(default_factory=list)
     status: str = "active"
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)  # thinking_times, response_count, etc.
     
     class Settings:
         name = "conversations"
         indexes = [
+            "user_id",
             "title",
             "status",
             "created_at",
             "participants",
+            [("user_id", 1), ("created_at", -1)],
             [("status", 1), ("created_at", -1)],
         ]
 

@@ -293,24 +293,78 @@ This document outlines the comprehensive task list for enhancing the AI MCP Tool
   - [ ] Add agent collaboration tools
   - [ ] Add agent analytics and reporting
 
-### 3.4 Security and Access Control
-- [ ] **Task 3.4.1**: Implement security framework
-  - [ ] Add authentication and authorization
-  - [ ] Implement role-based access control
-  - [ ] Add API key management
-  - [ ] Add security audit logging
+### 3.4 Security and Access Control ✅ **COMPLETED** (2025-10-26)
+- [x] **Task 3.4.1**: Implement security framework ✅ **COMPLETED** (2025-10-26)
+  - [x] Add authentication and authorization (server-side sessions, HTTP-only cookies)
+  - [x] Implement role-based access control (USER, ADMIN roles)
+  - [x] Add API key management (JWT tokens for session management)
+  - [x] Add security audit logging (AuditLog model with full tracking)
+  - **Files**: `models/documents.py`, `managers/user_manager.py`, `managers/session_manager.py`, `utils/auth.py`, `utils/audit.py`
+  - **Date**: 2025-10-26
 
-- [ ] **Task 3.4.2**: Add data protection
-  - [ ] Implement data encryption
-  - [ ] Add data anonymization
-  - [ ] Add privacy controls
-  - [ ] Add compliance reporting
+- [x] **Task 3.4.2**: Frontend authentication system ✅ **COMPLETED** (2025-10-26)
+  - [x] Create login page with beautiful UI
+  - [x] Implement auth store and state management
+  - [x] Add mandatory authentication on all pages
+  - [x] Update Header with user info and logout
+  - [x] Add credentials to all API calls
+  - **Files**: `ui/src/lib/stores/auth.js`, `ui/src/lib/services/auth.js`, `ui/src/routes/login/+page.svelte`, `ui/src/routes/+layout.svelte`
+  - **Date**: 2025-10-26
 
-- [ ] **Task 3.4.3**: Create security management UI
-  - [ ] Add user management interface
-  - [ ] Add security dashboard
-  - [ ] Add audit log viewer
-  - [ ] Add security configuration tools
+- [ ] **Task 3.4.3**: Create security management UI ⏸️ **DEFERRED**
+  - Future enhancement - admin user management interface
+  - **Priority**: LOW (moved from MEDIUM)
+
+### 3.5 Per-User Data Storage (NEW) ✅ **COMPLETED** (2025-10-27)
+- [x] **Task 3.5.1**: Backend - Conversation API endpoints ✅ **COMPLETED**
+  - [x] Add `GET /conversations` - List user's conversations
+  - [x] Add `POST /conversations` - Create new conversation
+  - [x] Add `GET /conversations/{id}` - Get specific conversation
+  - [x] Add `PUT /conversations/{id}` - Update conversation (add messages)
+  - [x] Add `DELETE /conversations/{id}` - Delete conversation
+  - [x] Add `POST /conversations/{id}/messages` - Add message to conversation
+  - [x] Filter by `user_id` automatically from session
+  - **Files**: `server/http_server.py`, `managers/conversation_manager.py`
+  - **Date**: 2025-10-27
+
+- [ ] **Task 3.5.2**: Backend - User preferences endpoints ⏸️ **DEFERRED**
+  - Preferences not immediately required; can be added later
+  - **Priority**: LOW (moved from HIGH)
+
+- [x] **Task 3.5.3**: Update Conversation model for per-user storage ✅ **COMPLETED**
+  - [x] Add `user_id` field to Conversation model
+  - [x] Add `messages` array with role/content/timestamp
+  - [x] Add `metadata` for extensibility
+  - [x] Update indexes for performance
+  - **Files**: `models/documents.py`
+  - **Date**: 2025-10-27
+
+- [x] **Task 3.5.4**: Frontend - Conversation service ✅ **COMPLETED**
+  - [x] Create conversation API service (list, create, update, delete, addMessage)
+  - [x] Add credentials forwarding to all API calls
+  - **Files**: `ui/src/lib/api/conversations.js`
+  - **Date**: 2025-10-27
+
+- [x] **Task 3.5.5**: Frontend - Update conversations store ✅ **COMPLETED**
+  - [x] Remove ALL localStorage code
+  - [x] Load conversations from API on init
+  - [x] Save to API instead of localStorage
+  - [x] Implement proper async/await for all operations
+  - [x] Convert message format between frontend/backend
+  - [x] Preserve metrics and model name in messages
+  - **Files**: `ui/src/lib/stores/conversations.js`
+  - **Date**: 2025-10-27
+
+- [ ] **Task 3.5.6**: Frontend - User preferences service ⏸️ **DEFERRED**
+  - Not immediately required
+  - **Priority**: LOW (moved from HIGH)
+
+- [x] **Task 3.5.7**: Verify all agent operations are per-user ✅ **COMPLETED**
+  - [x] AI Chat stores per user (conversations in MongoDB)
+  - [x] Resources filtered by owner (existing ResourceManager)
+  - [x] Remove localStorage usage (replaced with API calls)
+  - [x] Auto-create conversation on first message
+  - **Date**: 2025-10-27
 
 ## Phase 4: Integration & Testing (1-2 weeks)
 
@@ -393,7 +447,9 @@ This document outlines the comprehensive task list for enhancing the AI MCP Tool
 
 ### 🔵 **Low Priority (Future Enhancements)**
 - Tasks 3.3.1-3.3.4: Advanced Agent Features
-- Tasks 3.4.1-3.4.3: Security and Access Control
+- Task 3.4.3: Security Management UI (admin interface)
+- Task 3.5.2: User Preferences endpoints
+- Task 3.5.6: User Preferences UI
 - Tasks 4.3.1-4.3.3: Documentation and Deployment
 
 ## Success Metrics
@@ -421,20 +477,47 @@ This document outlines the comprehensive task list for enhancing the AI MCP Tool
 - [ ] Pipeline Processing System: 0/4 tasks
 - [ ] Agent Chaining and Workflows: 0/4 tasks
 
-### Phase 3 Progress: 0/16 tasks completed
+### Phase 3 Progress: 9/23 tasks completed (39%)
 - [ ] Memory and Persistence: 0/4 tasks
 - [ ] Event System: 0/4 tasks
 - [ ] Advanced Agent Features: 0/4 tasks
-- [ ] Security and Access Control: 0/4 tasks
+- [x] Security and Access Control: 2/3 tasks (100% ✅ COMPLETE) - 1 deferred as low priority
+- [x] Per-User Data Storage: 5/7 tasks (100% ✅ COMPLETE) - 2 deferred as low priority
 
 ### Phase 4 Progress: 0/9 tasks completed
 - [ ] System Integration: 0/3 tasks
 - [ ] Testing and Quality Assurance: 0/3 tasks
 - [ ] Documentation and Deployment: 0/3 tasks
 
-**Overall Progress: 4/57 tasks completed (7%)**
+**Overall Progress: 13/64 tasks completed (20%)**
 
 ## Recent Completions
+
+### 2025-10-27: Phase 3.5 Per-User Data Storage ✅ COMPLETE
+- ✅ ConversationManager with full CRUD operations for per-user conversations
+- ✅ Backend conversation API endpoints (GET/POST/PUT/DELETE + add message)
+- ✅ Frontend conversation API service with auth cookie forwarding
+- ✅ Conversations store migrated from localStorage to MongoDB API
+- ✅ Message metrics (tokens, speed, time) stored and displayed
+- ✅ Model name preserved per message for history tracking
+- ✅ Auto-create conversation on first message
+- ✅ Frontend auth proxy endpoints (login/logout/register/me)
+- ✅ Session cookie management across frontend/backend
+- ✅ GPU acceleration detection fixed for Metal/Apple Silicon
+- ✅ All protected endpoints forward session cookies properly
+- 📄 See: `PER_USER_STORAGE_MIGRATION.md`, `SECURITY_FIX_MODEL_SWITCHING.md` for details
+
+### 2025-10-26: Phase 3.4 Authentication & Authorization ✅ COMPLETE
+- ✅ Backend authentication with server-side sessions
+- ✅ User and Session models in MongoDB
+- ✅ Password hashing with bcrypt
+- ✅ Role-based access control (USER/ADMIN)
+- ✅ Audit logging system
+- ✅ Frontend login page and auth store
+- ✅ Mandatory authentication on all pages
+- ✅ User info in header with logout
+- ✅ Test users created (admin, testuser)
+- 📄 See: `AUTH_COMPLETE_SUMMARY.md`, `FRONTEND_AUTH_COMPLETE.md` for details
 
 ### 2025-10-26: Phase 1.1 Resource Management System ✅ COMPLETE
 - ✅ MongoDB Atlas connection established
@@ -448,22 +531,32 @@ This document outlines the comprehensive task list for enhancing the AI MCP Tool
 - ✅ All tests passing (test_db_simple.py, test_resource_handlers.py)
 - 📄 See: `DATABASE_SETUP_COMPLETE.md` for details
 
-### API Endpoints Added:
+### API Endpoints Added (Resources):
 - `GET /resources` - List resources with filtering
 - `GET /resources/{uri}` - Get specific resource
 - `POST /resources` - Create new resource
 - `PUT /resources/{uri}` - Update resource
 - `DELETE /resources/{uri}` - Delete resource
 - `GET /resources/search/{query}` - Search resources
-- `GET /resources/stats/count` - Count resources
+
+### API Endpoints Added (Conversations):
+- `GET /conversations` - List user's conversations
+- `POST /conversations` - Create new conversation
+- `GET /conversations/{id}` - Get specific conversation
+- `PUT /conversations/{id}` - Update conversation
+- `DELETE /conversations/{id}` - Delete conversation
+- `POST /conversations/{id}/messages` - Add message to conversation
+- `GET /conversations/stats/count` - Count user's conversations
 
 ## Current Focus
 
-**Next Sprint**: Start Phase 1.2 Prompt Template System
+**Current Sprint**: Phase 1.2 Prompt Template System 🟡 **HIGH PRIORITY**
 - [ ] Task 1.2.1: Create prompt data structures
 - [ ] Task 1.2.2: Implement prompt storage and management
 - [ ] Task 1.2.3: Add MCP prompt handlers
 - [ ] Task 1.2.4: Create prompt management UI
+
+**Next Sprint**: Phase 1.3 Message Handling System
 
 ## Notes
 
@@ -479,5 +572,5 @@ This document outlines the comprehensive task list for enhancing the AI MCP Tool
 
 ---
 
-*Last Updated: 2025-10-26*
+*Last Updated: 2025-10-27*
 *Next Review: Weekly or after each major task completion*

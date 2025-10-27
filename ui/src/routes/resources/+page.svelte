@@ -69,9 +69,7 @@
       loading = true;
       resources = await resourceAPI.listResources();
       filteredResources = resources;
-      
-      const countData = await resourceAPI.getResourceCount();
-      totalCount = countData.count;
+      totalCount = resources.length;
       
       loading = false;
     } catch (error) {

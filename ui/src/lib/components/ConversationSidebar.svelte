@@ -68,9 +68,9 @@
     return groups;
   }
 
-  function createNewConversation() {
-    const newId = conversations.createConversation();
-    currentConversationId.set(newId);
+  async function createNewConversation() {
+    const newConv = await conversations.createConversation();
+    currentConversationId.set(newConv.id);
     dispatch('conversationChanged');
   }
 

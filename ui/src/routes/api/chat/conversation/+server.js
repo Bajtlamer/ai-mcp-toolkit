@@ -6,9 +6,19 @@ const BACKEND_PORT = process.env.MCP_PORT || '8000';
 const BACKEND_URL = `http://${BACKEND_HOST}:${BACKEND_PORT}`;
 
 /** @type {import('./$types').RequestHandler} */
-export async function POST({ request }) {
+export async function POST({ request, cookies }) {
   try {
     const { message, conversationHistory, model, temperature, max_tokens } = await request.json();
+    
+    // Get session cookie to forward to backend
+    const sessionId = cookies.get('session_id');
+    
+    if (!sessionId) {
+      return json({ 
+        success: false, 
+        error: 'Authentication required. Please log in.' 
+      }, { status: 401 });
+    }
     
     // Build conversation messages from history
     const messages = [];
@@ -39,15 +49,17 @@ export async function POST({ request }) {
       content: message
     });
     
-    // Forward the request to the backend MCP server
+    // Forward the request to the backend MCP server with auth cookie
     const response = await fetch(`${BACKEND_URL}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Cookie': `session_id=${sessionId}`
       },
       body: JSON.stringify({
         messages: messages,
-        model: model || 'qwen2.5:14b',
+        // Don't send model parameter - let backend use its configured model
+        // model: model || 'qwen2.5:14b',
         temperature: temperature || 0.7,
         max_tokens: max_tokens || 2000,
         stream: false
