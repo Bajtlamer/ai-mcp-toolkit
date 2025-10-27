@@ -10,11 +10,12 @@ from typing import Any, Dict, List, Optional
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request, Response, Cookie, Depends
+from fastapi import FastAPI, HTTPException, Request, Response, Cookie, Depends, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, EmailStr
 from typing import Union
+import io
 
 from .mcp_server import MCPServer
 from ..utils.config import Config
@@ -24,6 +25,7 @@ from ..managers.resource_manager import ResourceManager
 from ..managers.user_manager import UserManager
 from ..managers.session_manager import SessionManager
 from ..managers.conversation_manager import ConversationManager
+from ..managers.prompt_manager import PromptManager
 from ..models.documents import ResourceType, User, UserRole
 from ..models.database import db_manager
 from ..utils.audit import AuditLogger
@@ -99,11 +101,13 @@ class ResourceUpdate(BaseModel):
 
 class ResourceResponse(BaseModel):
     """Response model for a resource."""
+    id: str
     uri: str
     name: str
     description: str
     mime_type: str
     resource_type: str
+    owner_id: str
     content: Optional[str] = None
     created_at: str
     updated_at: str
@@ -172,6 +176,57 @@ class ConversationResponse(BaseModel):
     updated_at: str
 
 
+# Prompt models
+class PromptArgumentModel(BaseModel):
+    """Model for prompt argument definition."""
+    name: str
+    description: str
+    type: str = "string"
+    required: bool = True
+    default: Optional[Any] = None
+
+
+class PromptCreate(BaseModel):
+    """Request model for creating a prompt."""
+    name: str
+    description: str
+    template: str
+    arguments: Optional[List[PromptArgumentModel]] = None
+    tags: Optional[List[str]] = None
+    is_public: bool = True
+    version: str = "1.0.0"
+
+
+class PromptUpdate(BaseModel):
+    """Request model for updating a prompt."""
+    description: Optional[str] = None
+    template: Optional[str] = None
+    arguments: Optional[List[PromptArgumentModel]] = None
+    tags: Optional[List[str]] = None
+    is_public: Optional[bool] = None
+    version: Optional[str] = None
+
+
+class PromptResponse(BaseModel):
+    """Response model for a prompt."""
+    name: str
+    description: str
+    template: str
+    arguments: List[PromptArgumentModel]
+    tags: List[str]
+    owner_id: Optional[str] = None
+    is_public: bool
+    version: str
+    use_count: int
+    created_at: str
+    updated_at: str
+
+
+class PromptRenderRequest(BaseModel):
+    """Request model for rendering a prompt."""
+    arguments: Dict[str, Any]
+
+
 class HTTPServer:
     """HTTP server that wraps MCP functionality."""
 
@@ -183,6 +238,7 @@ class HTTPServer:
         self.user_manager = UserManager()
         self.session_manager = SessionManager()
         self.conversation_manager = ConversationManager()
+        self.prompt_manager = PromptManager()
         self.app = None
         self.logger = get_logger(__name__, level=self.config.log_level)
 
@@ -933,25 +989,51 @@ class HTTPServer:
                             detail=f"Invalid resource_type. Must be one of: {[t.value for t in ResourceType]}"
                         )
                 
+                # Pass user context for ownership filtering
+                is_admin = user.role == UserRole.ADMIN
                 result = await self.resource_manager.list_resources(
+                    user_id=str(user.id),
+                    is_admin=is_admin,
                     resource_type=type_filter,
                     limit=limit,
                     offset=offset
                 )
                 
-                # Convert to dict format
-                resources = [
-                    {
-                        "uri": r.uri,
-                        "name": r.name,
-                        "description": r.description,
-                        "mimeType": r.mimeType
-                    }
-                    for r in result.resources
-                ]
+                # Fetch resources from database to get owner info
+                from ..models.documents import Resource
+                resources_list = []
                 
-                self.logger.info(f"Listed {len(resources)} resources")
-                return resources
+                for mcp_resource in result.resources:
+                    # Get full resource document
+                    db_resource = await Resource.find_one(Resource.uri == mcp_resource.uri)
+                    if db_resource:
+                        # Get owner username if admin
+                        owner_username = None
+                        if is_admin and db_resource.owner_id:
+                            self.logger.debug(f"Admin viewing resource {db_resource.uri}, owner_id: {db_resource.owner_id}")
+                            owner = await self.user_manager.get_user_by_id(db_resource.owner_id)
+                            if owner:
+                                owner_username = owner.username
+                                self.logger.debug(f"Found owner: {owner_username}")
+                            else:
+                                owner_username = "Unknown"
+                                self.logger.warning(f"Could not find user with ID: {db_resource.owner_id}")
+                        
+                        resources_list.append({
+                            "id": str(db_resource.id),
+                            "uri": db_resource.uri,
+                            "name": db_resource.name,
+                            "description": db_resource.description,
+                            "mimeType": db_resource.mime_type,
+                            "resourceType": db_resource.resource_type.value,
+                            "ownerId": db_resource.owner_id,
+                            "ownerUsername": owner_username,  # Only populated for admins
+                            "createdAt": db_resource.created_at.isoformat(),
+                            "updatedAt": db_resource.updated_at.isoformat()
+                        })
+                
+                self.logger.info(f"Listed {len(resources_list)} resources")
+                return resources_list
                 
             except HTTPException:
                 raise
@@ -959,11 +1041,110 @@ class HTTPServer:
                 self.logger.error(f"Error listing resources: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
         
+        @app.post("/resources/upload", response_model=ResourceResponse, status_code=201)
+        async def upload_resource(
+            file: UploadFile = File(...),
+            name: str = Form(None),
+            description: str = Form(...),
+            user: User = Depends(require_auth)
+        ):
+            """Upload a file as a resource."""
+            try:
+                # Read file content
+                content_bytes = await file.read()
+                
+                # Detect resource type based on MIME type
+                mime_type = file.content_type or 'application/octet-stream'
+                
+                # Determine if it's a text file we can store directly
+                is_text = mime_type.startswith('text/') or mime_type in [
+                    'application/json', 'application/xml', 'application/javascript'
+                ]
+                
+                # For text files under 10MB, store content directly
+                # For binary files or large files, store base64 encoded or reference
+                content_str = None
+                if is_text and len(content_bytes) < 10 * 1024 * 1024:  # 10MB limit
+                    try:
+                        content_str = content_bytes.decode('utf-8')
+                    except UnicodeDecodeError:
+                        # If decode fails, treat as binary
+                        is_text = False
+                
+                if not is_text or content_str is None:
+                    # For binary files, store metadata only
+                    # In future: store in GridFS or S3
+                    content_str = f"[Binary file: {file.filename}, {len(content_bytes)} bytes, {mime_type}]"
+                
+                # Generate URI
+                uri = f"file:///{file.filename}"
+                
+                # Use provided name or filename
+                resource_name = name or file.filename
+                
+                # Create resource with owner_id
+                resource = await self.resource_manager.create_resource(
+                    uri=uri,
+                    name=resource_name,
+                    description=description,
+                    mime_type=mime_type,
+                    resource_type=ResourceType.FILE,
+                    owner_id=str(user.id),
+                    content=content_str,
+                    metadata={
+                        'original_filename': file.filename,
+                        'file_size': len(content_bytes),
+                        'is_binary': not is_text
+                    }
+                )
+                
+                self.logger.info(f"User {user.username} uploaded file: {file.filename} ({len(content_bytes)} bytes)")
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="resource.upload",
+                    method="POST",
+                    endpoint="/resources/upload",
+                    status_code=201,
+                    resource_type="resource",
+                    resource_id=resource.uri,
+                    request_data={
+                        'filename': file.filename,
+                        'size': len(content_bytes),
+                        'mime_type': mime_type
+                    }
+                )
+                
+                return ResourceResponse(
+                    id=str(resource.id),
+                    uri=resource.uri,
+                    name=resource.name,
+                    description=resource.description,
+                    mime_type=resource.mime_type,
+                    resource_type=resource.resource_type.value,
+                    owner_id=resource.owner_id,
+                    content=resource.content if is_text else None,
+                    created_at=resource.created_at.isoformat(),
+                    updated_at=resource.updated_at.isoformat()
+                )
+                
+            except ValueError as e:
+                raise HTTPException(status_code=409, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Error uploading file: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
         @app.get("/resources/{uri:path}", response_model=Dict[str, Any])
         async def get_resource(uri: str, user: User = Depends(require_auth)):
             """Get a specific resource by URI (ownership checked)."""
             try:
-                result = await self.resource_manager.read_resource(uri)
+                is_admin = user.role == UserRole.ADMIN
+                result = await self.resource_manager.read_resource(
+                    uri,
+                    user_id=str(user.id),
+                    is_admin=is_admin
+                )
                 
                 if not result.contents:
                     raise HTTPException(status_code=404, detail=f"Resource not found: {uri}")
@@ -996,6 +1177,7 @@ class HTTPServer:
                     description=request.description,
                     mime_type=request.mime_type,
                     resource_type=resource_type_enum,
+                    owner_id=str(user.id),
                     content=request.content,
                     metadata=request.metadata
                 )
@@ -1003,11 +1185,13 @@ class HTTPServer:
                 self.logger.info(f"Created resource: {resource.uri}")
                 
                 return ResourceResponse(
+                    id=str(resource.id),
                     uri=resource.uri,
                     name=resource.name,
                     description=resource.description,
                     mime_type=resource.mime_type,
                     resource_type=resource.resource_type.value,
+                    owner_id=resource.owner_id,
                     content=resource.content,
                     created_at=resource.created_at.isoformat(),
                     updated_at=resource.updated_at.isoformat()
@@ -1025,8 +1209,11 @@ class HTTPServer:
         async def update_resource(uri: str, request: ResourceUpdate, user: User = Depends(require_auth)):
             """Update an existing resource (ownership checked)."""
             try:
+                is_admin = user.role == UserRole.ADMIN
                 resource = await self.resource_manager.update_resource(
                     uri=uri,
+                    user_id=str(user.id),
+                    is_admin=is_admin,
                     name=request.name,
                     description=request.description,
                     content=request.content,
@@ -1036,11 +1223,13 @@ class HTTPServer:
                 self.logger.info(f"Updated resource: {uri}")
                 
                 return ResourceResponse(
+                    id=str(resource.id),
                     uri=resource.uri,
                     name=resource.name,
                     description=resource.description,
                     mime_type=resource.mime_type,
                     resource_type=resource.resource_type.value,
+                    owner_id=resource.owner_id,
                     content=resource.content,
                     created_at=resource.created_at.isoformat(),
                     updated_at=resource.updated_at.isoformat()
@@ -1053,10 +1242,15 @@ class HTTPServer:
                 raise HTTPException(status_code=500, detail=str(e))
         
         @app.delete("/resources/{uri:path}", status_code=204)
-        async def delete_resource(uri: str):
-            """Delete a resource."""
+        async def delete_resource(uri: str, user: User = Depends(require_auth)):
+            """Delete a resource (ownership checked)."""
             try:
-                await self.resource_manager.delete_resource(uri)
+                is_admin = user.role == UserRole.ADMIN
+                await self.resource_manager.delete_resource(
+                    uri,
+                    user_id=str(user.id),
+                    is_admin=is_admin
+                )
                 self.logger.info(f"Deleted resource: {uri}")
                 return None
                 
@@ -1117,6 +1311,311 @@ class HTTPServer:
                 raise
             except Exception as e:
                 self.logger.error(f"Error counting resources: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        # Prompt Management Endpoints
+        
+        @app.get("/prompts", response_model=List[PromptResponse])
+        async def list_prompts(
+            user: User = Depends(require_auth),
+            tags: Optional[str] = None,
+            limit: int = 100,
+            offset: int = 0
+        ):
+            """List prompts (public + user's private prompts)."""
+            try:
+                tag_list = tags.split(",") if tags else None
+                
+                prompts = await self.prompt_manager.list_prompts(
+                    user_id=str(user.id),
+                    tags=tag_list,
+                    skip=offset,
+                    limit=limit
+                )
+                
+                return [
+                    PromptResponse(
+                        name=p.name,
+                        description=p.description,
+                        template=p.template,
+                        arguments=[PromptArgumentModel(**arg.dict()) for arg in p.arguments],
+                        tags=p.tags,
+                        owner_id=p.owner_id,
+                        is_public=p.is_public,
+                        version=p.version,
+                        use_count=p.use_count,
+                        created_at=p.created_at.isoformat(),
+                        updated_at=p.updated_at.isoformat()
+                    )
+                    for p in prompts
+                ]
+                
+            except Exception as e:
+                self.logger.error(f"Error listing prompts: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.get("/prompts/{name}", response_model=PromptResponse)
+        async def get_prompt(
+            name: str,
+            user: User = Depends(require_auth)
+        ):
+            """Get a specific prompt by name."""
+            try:
+                prompt = await self.prompt_manager.get_prompt(name, user_id=str(user.id))
+                
+                if not prompt:
+                    raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
+                
+                return PromptResponse(
+                    name=prompt.name,
+                    description=prompt.description,
+                    template=prompt.template,
+                    arguments=[PromptArgumentModel(**arg.dict()) for arg in prompt.arguments],
+                    tags=prompt.tags,
+                    owner_id=prompt.owner_id,
+                    is_public=prompt.is_public,
+                    version=prompt.version,
+                    use_count=prompt.use_count,
+                    created_at=prompt.created_at.isoformat(),
+                    updated_at=prompt.updated_at.isoformat()
+                )
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error getting prompt {name}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.post("/prompts", response_model=PromptResponse, status_code=201)
+        async def create_prompt(
+            request: PromptCreate,
+            user: User = Depends(require_auth)
+        ):
+            """Create a new prompt template."""
+            try:
+                arguments = [arg.dict() for arg in request.arguments] if request.arguments else []
+                
+                prompt = await self.prompt_manager.create_prompt(
+                    name=request.name,
+                    description=request.description,
+                    template=request.template,
+                    arguments=arguments,
+                    tags=request.tags or [],
+                    owner_id=str(user.id),
+                    is_public=request.is_public,
+                    version=request.version
+                )
+                
+                self.logger.info(f"User {user.username} created prompt: {prompt.name}")
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="prompt.create",
+                    method="POST",
+                    endpoint="/prompts",
+                    status_code=201,
+                    resource_type="prompt",
+                    resource_id=prompt.name
+                )
+                
+                return PromptResponse(
+                    name=prompt.name,
+                    description=prompt.description,
+                    template=prompt.template,
+                    arguments=[PromptArgumentModel(**arg.dict()) for arg in prompt.arguments],
+                    tags=prompt.tags,
+                    owner_id=prompt.owner_id,
+                    is_public=prompt.is_public,
+                    version=prompt.version,
+                    use_count=prompt.use_count,
+                    created_at=prompt.created_at.isoformat(),
+                    updated_at=prompt.updated_at.isoformat()
+                )
+                
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Error creating prompt: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.put("/prompts/{name}", response_model=PromptResponse)
+        async def update_prompt(
+            name: str,
+            request: PromptUpdate,
+            user: User = Depends(require_auth)
+        ):
+            """Update an existing prompt (only owner can update)."""
+            try:
+                arguments = [arg.dict() for arg in request.arguments] if request.arguments else None
+                
+                prompt = await self.prompt_manager.update_prompt(
+                    name=name,
+                    user_id=str(user.id),
+                    description=request.description,
+                    template=request.template,
+                    arguments=arguments,
+                    tags=request.tags,
+                    is_public=request.is_public,
+                    version=request.version
+                )
+                
+                if not prompt:
+                    raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
+                
+                self.logger.info(f"User {user.username} updated prompt: {name}")
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="prompt.update",
+                    method="PUT",
+                    endpoint=f"/prompts/{name}",
+                    status_code=200,
+                    resource_type="prompt",
+                    resource_id=name
+                )
+                
+                return PromptResponse(
+                    name=prompt.name,
+                    description=prompt.description,
+                    template=prompt.template,
+                    arguments=[PromptArgumentModel(**arg.dict()) for arg in prompt.arguments],
+                    tags=prompt.tags,
+                    owner_id=prompt.owner_id,
+                    is_public=prompt.is_public,
+                    version=prompt.version,
+                    use_count=prompt.use_count,
+                    created_at=prompt.created_at.isoformat(),
+                    updated_at=prompt.updated_at.isoformat()
+                )
+                
+            except PermissionError as e:
+                raise HTTPException(status_code=403, detail=str(e))
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error updating prompt {name}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.delete("/prompts/{name}", status_code=204)
+        async def delete_prompt(
+            name: str,
+            user: User = Depends(require_auth)
+        ):
+            """Delete a prompt (only owner can delete)."""
+            try:
+                success = await self.prompt_manager.delete_prompt(name, user_id=str(user.id))
+                
+                if not success:
+                    raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
+                
+                self.logger.info(f"User {user.username} deleted prompt: {name}")
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="prompt.delete",
+                    method="DELETE",
+                    endpoint=f"/prompts/{name}",
+                    status_code=204,
+                    resource_type="prompt",
+                    resource_id=name
+                )
+                
+                return None
+                
+            except PermissionError as e:
+                raise HTTPException(status_code=403, detail=str(e))
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error deleting prompt {name}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.post("/prompts/{name}/render")
+        async def render_prompt(
+            name: str,
+            request: PromptRenderRequest,
+            user: User = Depends(require_auth)
+        ):
+            """Render a prompt template with provided arguments."""
+            try:
+                prompt = await self.prompt_manager.get_prompt(name, user_id=str(user.id))
+                
+                if not prompt:
+                    raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
+                
+                rendered = self.prompt_manager.render_prompt(prompt, request.arguments)
+                
+                # Increment use count
+                await self.prompt_manager.increment_use_count(name)
+                
+                return {
+                    "prompt_name": name,
+                    "rendered": rendered,
+                    "arguments": request.arguments
+                }
+                
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error rendering prompt {name}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.get("/prompts/search/{query}")
+        async def search_prompts(
+            query: str,
+            user: User = Depends(require_auth),
+            limit: int = 20
+        ):
+            """Search prompts by name, description, or tags."""
+            try:
+                prompts = await self.prompt_manager.search_prompts(
+                    query=query,
+                    user_id=str(user.id),
+                    limit=limit
+                )
+                
+                results = [
+                    {
+                        "name": p.name,
+                        "description": p.description,
+                        "tags": p.tags,
+                        "version": p.version,
+                        "use_count": p.use_count
+                    }
+                    for p in prompts
+                ]
+                
+                return {"query": query, "results": results, "count": len(results)}
+                
+            except Exception as e:
+                self.logger.error(f"Error searching prompts: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.get("/prompts/stats/count")
+        async def get_prompt_count(
+            user: User = Depends(require_auth),
+            tags: Optional[str] = None
+        ):
+            """Get count of prompts."""
+            try:
+                tag_list = tags.split(",") if tags else None
+                
+                count = await self.prompt_manager.count_prompts(
+                    user_id=str(user.id),
+                    tags=tag_list
+                )
+                
+                return {"count": count, "tags": tags}
+                
+            except Exception as e:
+                self.logger.error(f"Error counting prompts: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
         
         # Conversation Management Endpoints (all require auth)

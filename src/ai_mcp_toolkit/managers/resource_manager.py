@@ -1,6 +1,7 @@
 """Resource Manager for MCP resource operations."""
 
 import logging
+import aiohttp
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -25,6 +26,8 @@ class ResourceManager:
     
     async def list_resources(
         self,
+        user_id: Optional[str] = None,
+        is_admin: bool = False,
         resource_type: Optional[ResourceType] = None,
         limit: int = 100,
         offset: int = 0
@@ -33,6 +36,8 @@ class ResourceManager:
         List available resources.
         
         Args:
+            user_id: User ID for ownership filtering (required for non-admins)
+            is_admin: Whether the user is an admin (admins see all resources)
             resource_type: Optional filter by resource type
             limit: Maximum number of resources to return
             offset: Offset for pagination
@@ -43,6 +48,11 @@ class ResourceManager:
         try:
             # Build query
             query = {}
+            
+            # Ownership filtering: regular users see only their resources, admins see all
+            if not is_admin and user_id:
+                query["owner_id"] = user_id
+            
             if resource_type:
                 query["resource_type"] = resource_type
             
@@ -68,18 +78,25 @@ class ResourceManager:
             self.logger.error(f"Error listing resources: {e}", exc_info=True)
             raise
     
-    async def read_resource(self, uri: str) -> ReadResourceResult:
+    async def read_resource(
+        self,
+        uri: str,
+        user_id: Optional[str] = None,
+        is_admin: bool = False
+    ) -> ReadResourceResult:
         """
         Read a specific resource by URI.
         
         Args:
             uri: Resource URI to read
+            user_id: User ID for ownership check (required for non-admins)
+            is_admin: Whether the user is an admin (admins can read all resources)
             
         Returns:
             ReadResourceResult with resource contents
             
         Raises:
-            ValueError: If resource not found
+            ValueError: If resource not found or access denied
         """
         try:
             # Find resource by URI
@@ -88,12 +105,45 @@ class ResourceManager:
             if not resource:
                 raise ValueError(f"Resource not found: {uri}")
             
+            # Ownership check: regular users can only read their own resources
+            if not is_admin and user_id and resource.owner_id != user_id:
+                raise ValueError(f"Access denied: Resource not found: {uri}")
+            
+            # Fetch content for URL resources
+            content = resource.content or ""
+            if resource.resource_type == ResourceType.URL and resource.uri.startswith(('http://', 'https://')):
+                try:
+                    self.logger.info(f"Fetching URL content: {resource.uri}")
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(
+                            resource.uri,
+                            timeout=aiohttp.ClientTimeout(total=30),
+                            headers={'User-Agent': 'AI-MCP-Toolkit/1.0'}
+                        ) as response:
+                            if response.status == 200:
+                                # Check if content is text
+                                content_type = response.headers.get('Content-Type', '')
+                                if 'text' in content_type or 'json' in content_type or 'xml' in content_type:
+                                    content = await response.text()
+                                    self.logger.info(f"Fetched {len(content)} chars from URL")
+                                else:
+                                    content = f"[Binary content from URL: {resource.uri}, Content-Type: {content_type}]"
+                            else:
+                                content = f"[Error fetching URL: HTTP {response.status}]"
+                                self.logger.warning(f"Failed to fetch URL {resource.uri}: {response.status}")
+                except aiohttp.ClientError as e:
+                    content = f"[Error fetching URL: {str(e)}]"
+                    self.logger.error(f"Error fetching URL {resource.uri}: {e}")
+                except Exception as e:
+                    content = f"[Error fetching URL: {str(e)}]"
+                    self.logger.error(f"Unexpected error fetching URL {resource.uri}: {e}")
+            
             # Return resource contents
             contents = [
                 {
                     "uri": resource.uri,
                     "mimeType": resource.mime_type,
-                    "text": resource.content or ""
+                    "text": content
                 }
             ]
             
@@ -113,6 +163,7 @@ class ResourceManager:
         description: str,
         mime_type: str,
         resource_type: ResourceType,
+        owner_id: str,
         content: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Resource:
@@ -125,6 +176,7 @@ class ResourceManager:
             description: Resource description
             mime_type: MIME type
             resource_type: Type of resource
+            owner_id: User ID who owns this resource
             content: Optional resource content
             metadata: Optional metadata dictionary
             
@@ -154,6 +206,7 @@ class ResourceManager:
                 description=description,
                 mime_type=mime_type,
                 resource_type=resource_type,
+                owner_id=owner_id,
                 content=content,
                 metadata=resource_metadata
             )
@@ -173,6 +226,8 @@ class ResourceManager:
     async def update_resource(
         self,
         uri: str,
+        user_id: Optional[str] = None,
+        is_admin: bool = False,
         name: Optional[str] = None,
         description: Optional[str] = None,
         content: Optional[str] = None,
@@ -183,6 +238,8 @@ class ResourceManager:
         
         Args:
             uri: Resource URI to update
+            user_id: User ID for ownership check (required for non-admins)
+            is_admin: Whether the user is an admin (admins can update all resources)
             name: Optional new name
             description: Optional new description
             content: Optional new content
@@ -192,13 +249,17 @@ class ResourceManager:
             Updated Resource document
             
         Raises:
-            ValueError: If resource not found
+            ValueError: If resource not found or access denied
         """
         try:
             # Find resource
             resource = await Resource.find_one(Resource.uri == uri)
             if not resource:
                 raise ValueError(f"Resource not found: {uri}")
+            
+            # Ownership check: regular users can only update their own resources
+            if not is_admin and user_id and resource.owner_id != user_id:
+                raise ValueError(f"Access denied: Resource not found: {uri}")
             
             # Update fields
             if name is not None:
@@ -225,24 +286,35 @@ class ResourceManager:
             self.logger.error(f"Error updating resource {uri}: {e}", exc_info=True)
             raise
     
-    async def delete_resource(self, uri: str) -> bool:
+    async def delete_resource(
+        self,
+        uri: str,
+        user_id: Optional[str] = None,
+        is_admin: bool = False
+    ) -> bool:
         """
         Delete a resource.
         
         Args:
             uri: Resource URI to delete
+            user_id: User ID for ownership check (required for non-admins)
+            is_admin: Whether the user is an admin (admins can delete all resources)
             
         Returns:
             True if deleted successfully
             
         Raises:
-            ValueError: If resource not found
+            ValueError: If resource not found or access denied
         """
         try:
             # Find resource
             resource = await Resource.find_one(Resource.uri == uri)
             if not resource:
                 raise ValueError(f"Resource not found: {uri}")
+            
+            # Ownership check: regular users can only delete their own resources
+            if not is_admin and user_id and resource.owner_id != user_id:
+                raise ValueError(f"Access denied: Resource not found: {uri}")
             
             # Delete resource
             await resource.delete()

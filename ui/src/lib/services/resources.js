@@ -39,6 +39,29 @@ export async function getResource(uri) {
 }
 
 /**
+ * Upload a file as a resource
+ */
+export async function uploadResource(file, name, description) {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (name) formData.append('name', name);
+  formData.append('description', description);
+  
+  const response = await fetch(`${API_BASE}/resources/upload`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData, // Don't set Content-Type header - browser will set it with boundary
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || `Failed to upload file: ${response.statusText}`);
+  }
+  
+  return await response.json();
+}
+
+/**
  * Create a new resource
  */
 export async function createResource(resourceData) {

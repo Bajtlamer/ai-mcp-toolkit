@@ -13,7 +13,8 @@
     Code,
     X,
     Save,
-    Loader
+    Loader,
+    Upload
   } from 'lucide-svelte';
   import * as resourceAPI from '$lib/services/resources';
 
@@ -42,6 +43,8 @@
   
   let formErrors = {};
   let submitting = false;
+  let selectedFile = null;
+  let fileInputElement;
   
   const resourceTypes = [
     { value: 'file', label: 'File', icon: File },
@@ -57,7 +60,16 @@
     'text/markdown',
     'application/json',
     'application/xml',
-    'text/csv'
+    'text/csv',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'application/octet-stream'
   ];
   
   onMount(async () => {
@@ -115,7 +127,211 @@
       content: ''
     };
     formErrors = {};
+    selectedFile = null;
     showCreateModal = true;
+  }
+  
+  // Auto-generate URI based on resource type
+  function generateURI() {
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substring(2, 8);
+    
+    switch(formData.resource_type) {
+      case 'file':
+        if (selectedFile) {
+          return `file:///${selectedFile.name}`;
+        }
+        return `file:///document-${randomStr}.txt`;
+      case 'url':
+        return formData.uri || `https://example.com/resource-${randomStr}`;
+      case 'text':
+        const slug = formData.name ? formData.name.toLowerCase().replace(/\s+/g, '-') : `text-${randomStr}`;
+        return `text:///${slug}`;
+      case 'database':
+        return `db:///${randomStr}`;
+      case 'api':
+        return `api:///${randomStr}`;
+      default:
+        return `resource:///${randomStr}`;
+    }
+  }
+  
+  // Detect MIME type from file extension
+  function detectMimeType(filename) {
+    const ext = filename.split('.').pop().toLowerCase();
+    const mimeMap = {
+      'txt': 'text/plain',
+      'md': 'text/markdown',
+      'html': 'text/html',
+      'htm': 'text/html',
+      'json': 'application/json',
+      'xml': 'application/xml',
+      'csv': 'text/csv',
+      'pdf': 'application/pdf',
+      'doc': 'application/msword',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'xls': 'application/vnd.ms-excel',
+      'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'png': 'image/png',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'gif': 'image/gif',
+      'svg': 'image/svg+xml'
+    };
+    return mimeMap[ext] || 'application/octet-stream';
+  }
+  
+  // Handle file selection
+  async function handleFileSelect(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    selectedFile = file;
+    
+    // Auto-fill form fields
+    if (!formData.name) {
+      formData.name = file.name;
+    }
+    
+    // Detect MIME type
+    formData.mime_type = detectMimeType(file.name);
+    
+    // Generate URI
+    formData.uri = generateURI();
+    
+    // Read file content for preview (only for text files under 1MB for display)
+    if (formData.mime_type.startsWith('text/') || formData.mime_type === 'application/json') {
+      if (file.size < 1024 * 1024) { // 1MB limit for preview
+        try {
+          const text = await readFileAsText(file);
+          formData.content = text;
+        } catch (error) {
+          console.error('Error reading file:', error);
+          formErrors.file = 'Error reading file content';
+        }
+      } else if (file.size > 10 * 1024 * 1024) {
+        formErrors.file = 'File is too large (max 10MB)';
+        selectedFile = null;
+        fileInputElement.value = '';
+        return;
+      } else {
+        formData.content = `[Large text file: ${file.name}, ${formatFileSize(file.size)}]`;
+      }
+    } else {
+      // Binary files - will be uploaded directly
+      if (file.size > 10 * 1024 * 1024) {
+        formErrors.file = 'File is too large (max 10MB)';
+        selectedFile = null;
+        fileInputElement.value = '';
+        return;
+      }
+      formData.content = `[Binary file: ${file.name}, ${formatFileSize(file.size)}]`;
+    }
+  }
+  
+  // Read file as text
+  function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = (e) => reject(e);
+      reader.readAsText(file);
+    });
+  }
+  
+  // Format file size
+  function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+  
+  // Handle resource type change
+  function handleResourceTypeChange() {
+    // Clear file selection when switching away from file type
+    if (formData.resource_type !== 'file') {
+      selectedFile = null;
+      if (fileInputElement) {
+        fileInputElement.value = '';
+      }
+    }
+    
+    // Auto-generate URI for new type
+    if (!formData.uri || formData.uri.startsWith('file://') || formData.uri.startsWith('text://')) {
+      formData.uri = generateURI();
+    }
+  }
+  
+  // Drag and drop handlers
+  let isDragging = false;
+  
+  function handleDragEnter(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    isDragging = true;
+  }
+  
+  function handleDragLeave(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    isDragging = false;
+  }
+  
+  function handleDragOver(event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  
+  async function handleDrop(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    isDragging = false;
+    
+    const files = event.dataTransfer?.files;
+    if (files && files.length > 0) {
+      // Simulate file input change
+      const file = files[0];
+      
+      // Create a mock event with the file
+      selectedFile = file;
+      
+      // Auto-fill form fields
+      if (!formData.name) {
+        formData.name = file.name;
+      }
+      
+      // Detect MIME type
+      formData.mime_type = detectMimeType(file.name);
+      
+      // Generate URI
+      formData.uri = generateURI();
+      
+      // Read file content
+      if (formData.mime_type.startsWith('text/') || formData.mime_type === 'application/json') {
+        if (file.size < 1024 * 1024) {
+          try {
+            const text = await readFileAsText(file);
+            formData.content = text;
+          } catch (error) {
+            console.error('Error reading file:', error);
+            formErrors.file = 'Error reading file content';
+          }
+        } else if (file.size > 10 * 1024 * 1024) {
+          formErrors.file = 'File is too large (max 10MB)';
+          selectedFile = null;
+          return;
+        } else {
+          formData.content = `[Large text file: ${file.name}, ${formatFileSize(file.size)}]`;
+        }
+      } else {
+        if (file.size > 10 * 1024 * 1024) {
+          formErrors.file = 'File is too large (max 10MB)';
+          selectedFile = null;
+          return;
+        }
+        formData.content = `[Binary file: ${file.name}, ${formatFileSize(file.size)}]`;
+      }
+    }
   }
   
   function openEditModal(resource) {
@@ -146,7 +362,24 @@
     formErrors = {};
     
     if (showCreateModal) {
-      if (!formData.uri) formErrors.uri = 'URI is required';
+      // Validate based on resource type
+      if (formData.resource_type === 'file') {
+        if (!selectedFile && !formData.content) {
+          formErrors.file = 'Please select a file';
+        }
+      } else if (formData.resource_type === 'url') {
+        if (!formData.uri) {
+          formErrors.uri = 'URL is required';
+        } else if (!formData.uri.startsWith('http://') && !formData.uri.startsWith('https://')) {
+          formErrors.uri = 'URL must start with http:// or https://';
+        }
+      }
+      
+      // Auto-generate URI if not set (except for URL type)
+      if (!formData.uri && formData.resource_type !== 'url') {
+        formData.uri = generateURI();
+      }
+      
       if (!formData.name) formErrors.name = 'Name is required';
       if (!formData.description) formErrors.description = 'Description is required';
     } else if (showEditModal) {
@@ -161,7 +394,19 @@
     
     try {
       submitting = true;
-      await resourceAPI.createResource(formData);
+      
+      // If file type with selected file, use upload endpoint
+      if (formData.resource_type === 'file' && selectedFile) {
+        await resourceAPI.uploadResource(
+          selectedFile,
+          formData.name,
+          formData.description
+        );
+      } else {
+        // Otherwise use regular create endpoint
+        await resourceAPI.createResource(formData);
+      }
+      
       await loadResources();
       closeModals();
     } catch (error) {
@@ -360,6 +605,11 @@
                           {resource.mimeType}
                         </span>
                       {/if}
+                      {#if resource.ownerUsername}
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
+                          👤 {resource.ownerUsername}
+                        </span>
+                      {/if}
                     </div>
                   </div>
                 </div>
@@ -403,20 +653,123 @@
       </div>
       
       <div class="p-6 space-y-4">
+        <!-- Resource Type Selection (First) -->
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            URI *
+            Resource Type *
           </label>
-          <input
-            type="text"
-            bind:value={formData.uri}
-            placeholder="resource://example.com/document.txt"
-            class="w-full px-4 py-2 border {formErrors.uri ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-          />
-          {#if formErrors.uri}
-            <p class="text-red-500 text-sm mt-1">{formErrors.uri}</p>
-          {/if}
+          <select 
+            bind:value={formData.resource_type} 
+            on:change={handleResourceTypeChange}
+            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          >
+            {#each resourceTypes as type}
+              <option value={type.value}>{type.label}</option>
+            {/each}
+          </select>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {#if formData.resource_type === 'file'}
+              Upload a file from your computer
+            {:else if formData.resource_type === 'url'}
+              Reference a resource from a URL
+            {:else if formData.resource_type === 'text'}
+              Create a text note or document
+            {:else if formData.resource_type === 'database'}
+              Connect to a database
+            {:else if formData.resource_type === 'api'}
+              Reference an API endpoint
+            {/if}
+          </p>
         </div>
+        
+        <!-- File Upload (Only for 'file' type) -->
+        {#if formData.resource_type === 'file'}
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Select File *
+            </label>
+            <div 
+              class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 {isDragging ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-300 dark:border-gray-600'} border-dashed rounded-lg hover:border-blue-500 dark:hover:border-blue-400 transition-colors"
+              on:dragenter={handleDragEnter}
+              on:dragleave={handleDragLeave}
+              on:dragover={handleDragOver}
+              on:drop={handleDrop}
+            >
+              <div class="space-y-1 text-center">
+                <Upload class="mx-auto h-12 w-12 {isDragging ? 'text-blue-500' : 'text-gray-400'}" />
+                <div class="flex text-sm text-gray-600 dark:text-gray-400">
+                  <label class="relative cursor-pointer bg-white dark:bg-gray-800 rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
+                    <span class="px-2">Upload a file</span>
+                    <input 
+                      type="file" 
+                      bind:this={fileInputElement}
+                      on:change={handleFileSelect}
+                      class="sr-only" 
+                    />
+                  </label>
+                  <p class="pl-1">or drag and drop</p>
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  Any file type up to 10MB
+                </p>
+              </div>
+            </div>
+            {#if selectedFile}
+              <div class="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <File size={16} class="text-blue-600 dark:text-blue-400" />
+                    <span class="text-sm text-blue-900 dark:text-blue-100 font-medium">{selectedFile.name}</span>
+                    <span class="text-xs text-blue-600 dark:text-blue-400">({formatFileSize(selectedFile.size)})</span>
+                  </div>
+                  <button
+                    on:click={() => {
+                      selectedFile = null;
+                      fileInputElement.value = '';
+                      formData.content = '';
+                    }}
+                    class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+            {/if}
+            {#if formErrors.file}
+              <p class="text-red-500 text-sm mt-1">{formErrors.file}</p>
+            {/if}
+          </div>
+        {/if}
+        
+        <!-- URI Input (conditional based on type) -->
+        {#if formData.resource_type === 'url'}
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              URL *
+            </label>
+            <input
+              type="url"
+              bind:value={formData.uri}
+              placeholder="https://example.com/document.pdf"
+              class="w-full px-4 py-2 border {formErrors.uri ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+            />
+            {#if formErrors.uri}
+              <p class="text-red-500 text-sm mt-1">{formErrors.uri}</p>
+            {/if}
+          </div>
+        {:else if formData.resource_type !== 'file'}
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              URI <span class="text-gray-500 text-xs">(auto-generated)</span>
+            </label>
+            <input
+              type="text"
+              bind:value={formData.uri}
+              placeholder="Will be auto-generated"
+              class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 font-mono text-sm"
+            />
+          </div>
+        {/if}
         
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -448,41 +801,46 @@
           {/if}
         </div>
         
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Resource Type
-            </label>
-            <select bind:value={formData.resource_type} class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-              {#each resourceTypes as type}
-                <option value={type.value}>{type.label}</option>
-              {/each}
-            </select>
-          </div>
-          
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              MIME Type
-            </label>
-            <select bind:value={formData.mime_type} class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-              {#each mimeTypes as mimeType}
-                <option value={mimeType}>{mimeType}</option>
-              {/each}
-            </select>
-          </div>
-        </div>
-        
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Content (optional)
+            MIME Type <span class="text-gray-500 text-xs">(auto-detected for files)</span>
           </label>
-          <textarea
-            bind:value={formData.content}
-            placeholder="Resource content..."
-            rows="6"
-            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 font-mono text-sm"
-          />
+          <select bind:value={formData.mime_type} class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            {#each mimeTypes as mimeType}
+              <option value={mimeType}>{mimeType}</option>
+            {/each}
+          </select>
         </div>
+        
+        <!-- Content field - only show for text and database types -->
+        {#if formData.resource_type === 'text' || formData.resource_type === 'database' || (formData.resource_type === 'file' && selectedFile)}
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Content {formData.resource_type === 'file' && selectedFile ? '(from file)' : formData.resource_type === 'text' ? '*' : '(optional)'}
+            </label>
+            <textarea
+              bind:value={formData.content}
+              placeholder={formData.resource_type === 'file' ? 'File content will be loaded automatically...' : formData.resource_type === 'text' ? 'Enter your text content...' : 'Resource content...'}
+              rows="6"
+              class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 font-mono text-sm"
+              readonly={formData.resource_type === 'file' && selectedFile}
+            />
+            {#if formData.resource_type === 'text' && !formData.content}
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Add your text content here
+              </p>
+            {/if}
+          </div>
+        {/if}
+        
+        <!-- Info message for URL type -->
+        {#if formData.resource_type === 'url'}
+          <div class="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <p class="text-sm text-blue-800 dark:text-blue-200">
+              ℹ️ The content from this URL will be automatically fetched when the resource is accessed by agents.
+            </p>
+          </div>
+        {/if}
         
         {#if formErrors.submit}
           <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">

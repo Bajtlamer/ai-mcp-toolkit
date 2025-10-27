@@ -16,6 +16,11 @@ from mcp.types import (
     Resource,
     ListResourcesResult,
     ReadResourceResult,
+    Prompt,
+    PromptArgument,
+    PromptMessage,
+    ListPromptsResult,
+    GetPromptResult,
 )
 
 from ..agents.text_cleaner import TextCleanerAgent
@@ -31,6 +36,7 @@ from ..utils.logger import get_logger
 from ..utils.gpu_monitor import get_gpu_monitor
 from ..models.database import db_manager
 from ..managers.resource_manager import ResourceManager
+from ..managers.prompt_manager import PromptManager
 
 logger = get_logger(__name__)
 
@@ -55,6 +61,7 @@ class MCPServer:
         self.db_manager = db_manager
         self._db_connected = False
         self.resource_manager = ResourceManager()
+        self.prompt_manager = PromptManager()
         
         # Initialize logger
         self.logger = get_logger(__name__, level=self.config.log_level)
@@ -101,6 +108,83 @@ class MCPServer:
                 raise
             except Exception as e:
                 self.logger.error(f"Error reading resource {uri}: {e}", exc_info=True)
+                raise
+        
+        @self.server.list_prompts()
+        async def list_prompts() -> ListPromptsResult:
+            """List all available prompt templates."""
+            try:
+                if not self._db_connected:
+                    self.logger.warning("Database not connected, returning empty prompt list")
+                    return ListPromptsResult(prompts=[])
+                
+                # Get all public prompts (no user_id since MCP doesn't have auth context)
+                db_prompts = await self.prompt_manager.list_prompts(user_id=None, limit=100)
+                
+                # Convert to MCP Prompt objects
+                mcp_prompts = []
+                for db_prompt in db_prompts:
+                    # Convert arguments
+                    arguments = []
+                    for arg in db_prompt.arguments:
+                        arguments.append(PromptArgument(
+                            name=arg.name,
+                            description=arg.description,
+                            required=arg.required
+                        ))
+                    
+                    mcp_prompts.append(Prompt(
+                        name=db_prompt.name,
+                        description=db_prompt.description,
+                        arguments=arguments
+                    ))
+                
+                self.logger.info(f"Listed {len(mcp_prompts)} prompts")
+                return ListPromptsResult(prompts=mcp_prompts)
+                
+            except Exception as e:
+                self.logger.error(f"Error listing prompts: {e}", exc_info=True)
+                return ListPromptsResult(prompts=[])
+        
+        @self.server.get_prompt()
+        async def get_prompt(name: str, arguments: Optional[Dict[str, str]] = None) -> GetPromptResult:
+            """Get a specific prompt template and optionally render it with arguments."""
+            try:
+                if not self._db_connected:
+                    raise ValueError("Database not connected")
+                
+                # Get the prompt from database
+                db_prompt = await self.prompt_manager.get_prompt(name, user_id=None)
+                if not db_prompt:
+                    raise ValueError(f"Prompt '{name}' not found or not accessible")
+                
+                # Render the prompt if arguments provided
+                rendered_template = db_prompt.template
+                if arguments:
+                    rendered_template = self.prompt_manager.render_prompt(db_prompt, arguments)
+                    # Increment use count when prompt is actually used
+                    await self.prompt_manager.increment_use_count(name)
+                
+                # Return the rendered prompt as a message
+                messages = [PromptMessage(
+                    role="user",
+                    content=TextContent(
+                        type="text",
+                        text=rendered_template
+                    )
+                )]
+                
+                self.logger.info(f"Got prompt: {name}")
+                return GetPromptResult(
+                    description=db_prompt.description,
+                    messages=messages
+                )
+                
+            except ValueError as e:
+                self.logger.error(f"Prompt not found: {name}")
+                raise
+            except Exception as e:
+                self.logger.error(f"Error getting prompt {name}: {e}", exc_info=True)
                 raise
         
         @self.server.list_tools()

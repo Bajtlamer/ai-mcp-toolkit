@@ -1,5 +1,7 @@
 <script>
-  import { Zap, Play, Copy, Download } from 'lucide-svelte';
+  import { Zap, Play, Copy, Download, Database } from 'lucide-svelte';
+  import { onMount } from 'svelte';
+  import * as resourceAPI from '$lib/services/resources';
 
   let inputText = '';
   let inputUrl = '';
@@ -8,7 +10,10 @@
   let error = null;
   let compressionLevel = 'high';
   let summaryLength = 'short';
-  let inputMode = 'text'; // 'text' or 'url'
+  let inputMode = 'text'; // 'text', 'url', or 'resource'
+  let selectedResourceUri = '';
+  let resources = [];
+  let loadingResources = false
   
   const compressionOptions = [
     { value: 'extreme', label: 'Extreme', description: 'Ultra-concise (< 5% of original)' },
@@ -30,11 +35,27 @@
     "The Renaissance was a period of European cultural, artistic, political and economic rebirth following the Middle Ages. Generally described as taking place from the 14th century to the 17th century, the Renaissance promoted the rediscovery of classical philosophy, literature and art. Some of the greatest thinkers, authors, statesmen, scientists and artists in human history thrived during this era, while global exploration opened up new lands and cultures to European commerce. The Renaissance is credited with bridging the gap between the Middle Ages and modern-day civilization. Renaissance art was characterized by realism and human emotion, a departure from the Byzantine and gothic styles that dominated the Middle Ages.",
     "Renewable energy comes from sources that are naturally replenishing and virtually inexhaustible in duration but limited in the amount of energy that is available per unit of time. The major types of renewable energy sources are solar energy, wind energy, hydroelectric energy, geothermal energy, and biomass energy. Solar energy harnesses the power of the sun through photovoltaic cells or solar thermal collectors. Wind energy uses turbines to convert the kinetic energy of moving air into electricity. Hydroelectric power generates electricity by using the flow of water to spin turbine generators. Geothermal energy taps into the Earth's internal heat, while biomass energy comes from organic materials. These renewable sources are increasingly important as the world seeks to reduce greenhouse gas emissions and combat climate change while meeting growing energy demands."
   ];
+  
+  onMount(async () => {
+    await loadResources();
+  });
+  
+  async function loadResources() {
+    try {
+      loadingResources = true;
+      resources = await resourceAPI.listResources();
+    } catch (err) {
+      console.error('Error loading resources:', err);
+    } finally {
+      loadingResources = false;
+    }
+  }
 
   async function summarizeText() {
     // Validate input based on mode
     if (inputMode === 'text' && !inputText.trim()) return;
     if (inputMode === 'url' && !inputUrl.trim()) return;
+    if (inputMode === 'resource' && !selectedResourceUri) return;
     
     isProcessing = true;
     error = null;
@@ -48,15 +69,24 @@
       
       if (inputMode === 'text') {
         args.text = inputText;
-      } else {
+      } else if (inputMode === 'url') {
         args.url = inputUrl;
+      } else if (inputMode === 'resource') {
+        // Fetch resource content from backend
+        const resource = await resourceAPI.getResource(selectedResourceUri);
+        if (resource && resource.text) {
+          args.text = resource.text;
+        } else {
+          throw new Error('Could not fetch resource content');
+        }
       }
       
-      const response = await fetch('/api/tools/execute', {
+      const response = await fetch('http://localhost:8000/tools/execute', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',  // Fix 401 error
         body: JSON.stringify({
           name: 'summarize_text',
           arguments: args
@@ -153,16 +183,23 @@
           >
             URL Input
           </button>
+          <button
+            on:click={() => inputMode = 'resource'}
+            class="{inputMode === 'resource' ? 'border-orange-500 text-orange-600 dark:text-orange-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors"
+          >
+            <Database size={14} class="inline mr-1" />
+            From Resource
+          </button>
         </nav>
       </div>
 
       <!-- Input Header -->
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-lg font-medium text-gray-900 dark:text-white">
-          {inputMode === 'text' ? 'Input Text' : 'Website URL'}
+          {inputMode === 'text' ? 'Input Text' : inputMode === 'url' ? 'Website URL' : 'Select Resource'}
         </h3>
         <span class="text-sm text-gray-500 dark:text-gray-400">
-          {inputMode === 'text' ? `${inputText.length} characters` : inputUrl ? '✓ URL entered' : 'Enter URL'}
+          {inputMode === 'text' ? `${inputText.length} characters` : inputMode === 'url' ? (inputUrl ? '✓ URL entered' : 'Enter URL') : (selectedResourceUri ? '✓ Resource selected' : 'Choose resource')}
         </span>
       </div>
       
@@ -175,7 +212,7 @@
             placeholder="Enter long text to summarize..."
             class="w-full h-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
           ></textarea>
-        {:else}
+        {:else if inputMode === 'url'}
           <!-- URL Input Mode -->
           <div class="h-full flex flex-col space-y-4">
             <input
@@ -199,6 +236,38 @@
                     <li>The system will extract the main content automatically</li>
                     <li>Works best with content-rich pages (articles, documentation, etc.)</li>
                     <li>Page title will be included in the analysis context</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        {:else if inputMode === 'resource'}
+          <!-- Resource Input Mode -->
+          <div class="h-full flex flex-col space-y-4">
+            <select
+              bind:value={selectedResourceUri}
+              class="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+            >
+              <option value="">-- Select a resource --</option>
+              {#each resources as resource}
+                <option value={resource.uri}>
+                  {resource.name} ({resource.mimeType})
+                </option>
+              {/each}
+            </select>
+            
+            <div class="flex-1 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+              <div class="flex items-start space-x-3">
+                <div class="flex-shrink-0">
+                  <Database class="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5" />
+                </div>
+                <div class="text-sm text-green-700 dark:text-green-300">
+                  <p class="font-medium">Summarize from Resources:</p>
+                  <ul class="mt-1 list-disc list-inside space-y-1">
+                    <li>Select any uploaded text file, PDF, or URL resource</li>
+                    <li>Content will be automatically fetched and summarized</li>
+                    <li>Supports all resource types: files, URLs, and text documents</li>
+                    <li>{resources.length} resources available</li>
                   </ul>
                 </div>
               </div>
@@ -242,15 +311,15 @@
       
       <button
         on:click={summarizeText}
-        disabled={(inputMode === 'text' && !inputText.trim()) || (inputMode === 'url' && !inputUrl.trim()) || isProcessing}
+        disabled={(inputMode === 'text' && !inputText.trim()) || (inputMode === 'url' && !inputUrl.trim()) || (inputMode === 'resource' && !selectedResourceUri) || isProcessing}
         class="w-full flex items-center justify-center px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors"
       >
         {#if isProcessing}
           <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-          {inputMode === 'url' ? 'Fetching & Summarizing...' : 'Summarizing...'}
+          {inputMode === 'url' ? 'Fetching & Summarizing...' : inputMode === 'resource' ? 'Loading & Summarizing...' : 'Summarizing...'}
         {:else}
           <Play size={16} class="mr-2" />
-          {inputMode === 'url' ? 'Summarize from URL' : 'Summarize Text'}
+          {inputMode === 'url' ? 'Summarize from URL' : inputMode === 'resource' ? 'Summarize Resource' : 'Summarize Text'}
         {/if}
       </button>
     </div>

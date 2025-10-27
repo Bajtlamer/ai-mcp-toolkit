@@ -37,7 +37,7 @@ class Config:
     log_file: Optional[str] = field(default_factory=lambda: os.getenv("LOG_FILE"))
     
     # Text processing configuration
-    max_text_length: int = field(default_factory=lambda: int(os.getenv("MAX_TEXT_LENGTH", "100000")))
+    max_text_length: int = field(default_factory=lambda: int(os.getenv("MAX_TEXT_LENGTH", "1000000")))  # 1M chars (~1MB text)
     chunk_size: int = field(default_factory=lambda: int(os.getenv("CHUNK_SIZE", "1000")))
     
     # Model configuration

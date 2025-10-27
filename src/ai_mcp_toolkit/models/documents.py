@@ -198,7 +198,10 @@ class Prompt(Document):
     template: str
     arguments: List[PromptArgument] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
+    owner_id: Optional[str] = None  # User ID who created this prompt
+    is_public: bool = True  # Public prompts visible to all users
     version: str = "1.0.0"
+    use_count: int = 0  # Track how many times the prompt was used
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
@@ -207,8 +210,12 @@ class Prompt(Document):
         indexes = [
             "name",
             "tags",
+            "owner_id",
+            "is_public",
             "created_at",
             [("tags", 1), ("created_at", -1)],
+            [("owner_id", 1), ("created_at", -1)],
+            [("is_public", 1), ("created_at", -1)],
         ]
 
 
