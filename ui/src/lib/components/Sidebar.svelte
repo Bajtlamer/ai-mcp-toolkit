@@ -56,7 +56,8 @@
         { name: 'Language Detector', href: '/agents/language-detector', icon: Languages },
         { name: 'Sentiment Analyzer', href: '/agents/sentiment-analyzer', icon: Heart },
         { name: 'Text Anonymizer', href: '/agents/text-anonymizer', icon: Shield },
-        { name: 'Diacritic Remover', href: '/agents/diacritic-remover', icon: Type }
+        { name: 'Diacritic Remover', href: '/agents/diacritic-remover', icon: Type },
+        { name: 'PDF Text Extractor', href: '/agents/pdf-extractor', icon: FileText }
       ]
     }
   ];
