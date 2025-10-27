@@ -689,7 +689,7 @@ class HTTPServer:
             request: Dict[str, Any],
             user: User = Depends(require_admin)
         ):
-            """Switch active Ollama model (admin only)."""
+            """Switch active Ollama model (admin only) - physically unloads old model and loads new one."""
             try:
                 model_name = request.get("model")
                 if not model_name:
@@ -709,8 +709,61 @@ class HTTPServer:
                             detail=f"Model '{model_name}' not found. Available models: {', '.join(model_names)}"
                         )
                 
-                # Update config in memory
                 old_model = self.config.ollama_model
+                
+                # Step 1: Physically unload the old model from Ollama (like 'ollama stop')
+                ollama_url = self.config.get_ollama_url()
+                async with aiohttp.ClientSession() as session:
+                    try:
+                        self.logger.info(f"Unloading old model: {old_model}")
+                        # Send a request with keep_alive=0 to immediately unload the old model
+                        unload_response = await session.post(
+                            f"{ollama_url}/api/generate",
+                            json={
+                                "model": old_model,
+                                "prompt": "",
+                                "keep_alive": 0  # Unload immediately
+                            },
+                            timeout=aiohttp.ClientTimeout(total=10)
+                        )
+                        if unload_response.status == 200:
+                            self.logger.info(f"Successfully unloaded old model: {old_model}")
+                        else:
+                            self.logger.warning(f"Old model unload returned status {unload_response.status}")
+                    except Exception as e:
+                        self.logger.warning(f"Could not unload old model {old_model}: {e}")
+                    
+                    # Step 2: Pre-load and warm up the new model (like 'echo Hello | ollama run')
+                    try:
+                        self.logger.info(f"Loading and warming up new model: {model_name}")
+                        warmup_response = await session.post(
+                            f"{ollama_url}/api/generate",
+                            json={
+                                "model": model_name,
+                                "prompt": "Hello",  # Simple warmup prompt
+                                "stream": False,
+                                "keep_alive": "30m"  # Keep loaded for 30 minutes
+                            },
+                            timeout=aiohttp.ClientTimeout(total=120)  # Allow time for model loading
+                        )
+                        if warmup_response.status == 200:
+                            warmup_data = await warmup_response.json()
+                            self.logger.info(f"Successfully loaded and warmed up model: {model_name}")
+                        else:
+                            error_text = await warmup_response.text()
+                            self.logger.error(f"Warmup failed with status {warmup_response.status}: {error_text}")
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"Failed to load new model: HTTP {warmup_response.status}"
+                            )
+                    except aiohttp.ClientError as e:
+                        self.logger.error(f"Failed to warm up new model {model_name}: {e}", exc_info=True)
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Failed to load new model: {str(e)}"
+                        )
+                
+                # Step 3: Update config in memory (only after successful model load)
                 self.config.ollama_model = model_name
                 
                 # Log the change
@@ -733,7 +786,7 @@ class HTTPServer:
                     "message": f"Successfully switched to model: {model_name}",
                     "previous_model": old_model,
                     "current_model": model_name,
-                    "note": "Model changed in memory. To persist across restarts, update OLLAMA_MODEL environment variable or config file."
+                    "note": "Model physically unloaded and reloaded in Ollama. No server restart needed. To persist across restarts, update OLLAMA_MODEL environment variable."
                 }
                 
             except HTTPException:

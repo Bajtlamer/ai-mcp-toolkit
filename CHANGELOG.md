@@ -5,6 +5,18 @@ All notable changes to the AI MCP Toolkit project will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🔧 Fixed
+- **Model Switching Without Restart** - Fixed `/ollama/models/switch` endpoint to physically unload old model and load new one
+  - Previously only updated Python config variable, requiring server restart
+  - Now uses `keep_alive: 0` to unload old model (like `ollama stop`)
+  - Pre-loads new model with warmup prompt (like `ollama run`)
+  - No server restart needed after switching models
+  - Matches behavior of the original bash script `switch-model.sh`
+
+---
+
 ## [0.3.0] - 2025-01-18
 
 ### 🚀 Major Features & Enhancements

@@ -108,6 +108,19 @@ async def chat_completions(
 - ✅ Returns 403 Forbidden for non-admin users attempting model change
 - ✅ Audit logs all actions with user_id
 
+## Model Switching Implementation
+
+The `/ollama/models/switch` endpoint now **physically unloads and reloads models** (no server restart needed):
+
+**How it works**:
+1. **Step 1**: Unload old model using `keep_alive: 0` (like `ollama stop`)
+2. **Step 2**: Pre-load new model with warmup prompt (like `ollama run`)
+3. **Step 3**: Update config only after successful load
+
+**Why this fixes the restart issue**:
+- Previously: Only updated Python config variable, old model stayed in Ollama memory
+- Now: Physically manages Ollama model lifecycle, just like the bash script did
+
 ## How Model Selection Works Now
 
 ### For Admin Users
