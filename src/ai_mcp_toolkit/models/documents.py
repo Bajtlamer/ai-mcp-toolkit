@@ -177,6 +177,25 @@ class Resource(Document):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
+    # Vector embeddings fields for semantic search
+    embeddings: Optional[List[float]] = None  # Main embedding vector (768 dims for nomic-embed-text)
+    embeddings_model: Optional[str] = None  # e.g., "nomic-embed-text", "text-embedding-3-small"
+    embeddings_created_at: Optional[datetime] = None
+    embeddings_chunk_count: Optional[int] = None
+    
+    # For chunked documents (large files split into searchable chunks)
+    chunks: Optional[List[Dict[str, Any]]] = None
+    # chunks format: [
+    #   {
+    #     "index": 0,
+    #     "text": "chunk content...",
+    #     "embeddings": [0.1, 0.2, ...],
+    #     "char_start": 0,
+    #     "char_end": 1000
+    #   },
+    #   ...
+    # ]
+    
     class Settings:
         name = "resources"
         indexes = [

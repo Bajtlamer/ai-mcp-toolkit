@@ -1076,7 +1076,7 @@ If issues occur:
 
 | Phase | Tasks | Time | Status |
 |-------|-------|------|--------|
-| 1 | Database Schema | 30 min | ⏸️ Pending |
+| 1 | Database Schema | 30 min | ✅ **DONE** (2025-10-28) |
 | 2 | Embedding Service | 1-2 hours | ⏸️ Pending |
 | 3 | Upload Integration | 1 hour | ⏸️ Pending |
 | 4 | Search API | 1-2 hours | ⏸️ Pending |
