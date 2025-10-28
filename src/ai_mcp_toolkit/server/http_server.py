@@ -1238,7 +1238,49 @@ class HTTPServer:
                     if 'duplicate_warning' in metadata:
                         description += " [Duplicate content detected]"
                 
-                # Create resource with owner_id
+                # Generate embeddings if enabled and we have text content
+                embeddings = None
+                chunks = None
+                embeddings_chunk_count = 0
+                
+                if self.config.embedding_enabled and content_str and len(content_str.strip()) > 0:
+                    try:
+                        self.logger.info(f"Generating embeddings for {file.filename}...")
+                        
+                        from ..managers.embedding_manager import get_embedding_manager
+                        embedding_manager = get_embedding_manager(
+                            provider=self.config.embedding_provider,
+                            model=self.config.embedding_model
+                        )
+                        
+                        # Generate embeddings with chunking for large docs
+                        embedding_result = await embedding_manager.embed_document(
+                            text=content_str,
+                            chunk_if_large=True,
+                            chunk_size=self.config.embedding_chunk_size
+                        )
+                        
+                        embeddings = embedding_result['embeddings']
+                        chunks = embedding_result['chunks']
+                        embeddings_chunk_count = embedding_result['chunk_count']
+                        
+                        # Add embedding metadata
+                        metadata['embeddings_model'] = embedding_manager.model
+                        metadata['embeddings_provider'] = embedding_manager.provider
+                        metadata['embeddings_dimensions'] = len(embeddings) if embeddings else 0
+                        metadata['embeddings_chunk_count'] = embeddings_chunk_count
+                        
+                        self.logger.info(
+                            f"Embeddings generated: {len(embeddings) if embeddings else 0} dims, "
+                            f"{embeddings_chunk_count} chunks"
+                        )
+                        
+                    except Exception as e:
+                        # Don't fail upload if embeddings fail
+                        self.logger.warning(f"Failed to generate embeddings for {file.filename}: {e}")
+                        metadata['embeddings_error'] = str(e)
+                
+                # Create resource with owner_id and embeddings
                 resource = await self.resource_manager.create_resource(
                     uri=uri,
                     name=resource_name,
@@ -1247,12 +1289,15 @@ class HTTPServer:
                     resource_type=ResourceType.FILE,
                     owner_id=str(user.id),
                     content=content_str,
-                    metadata=metadata
+                    metadata=metadata,
+                    embeddings=embeddings,
+                    chunks=chunks
                 )
                 
                 self.logger.info(
                     f"User {user.username} uploaded: {file.filename} -> {unique_filename} "
-                    f"({metadata['file_size_human']}, {file_category}, hash: {content_hash[:16]}...)"
+                    f"({metadata['file_size_human']}, {file_category}, hash: {content_hash[:16]}..., "
+                    f"embeddings: {embeddings_chunk_count} chunks)"
                 )
                 
                 # Log audit event

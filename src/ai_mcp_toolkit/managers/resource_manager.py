@@ -213,10 +213,12 @@ class ResourceManager:
         resource_type: ResourceType,
         owner_id: str,
         content: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        embeddings: Optional[List[float]] = None,
+        chunks: Optional[List[Dict[str, Any]]] = None
     ) -> Resource:
         """
-        Create a new resource.
+        Create a new resource with optional vector embeddings.
         
         Args:
             uri: Unique resource URI
@@ -227,6 +229,8 @@ class ResourceManager:
             owner_id: User ID who owns this resource
             content: Optional resource content
             metadata: Optional metadata dictionary
+            embeddings: Optional embedding vector for semantic search
+            chunks: Optional document chunks with embeddings
             
         Returns:
             Created Resource document
@@ -245,7 +249,7 @@ class ResourceManager:
                 properties=metadata or {}
             )
             
-            # Create new resource
+            # Create new resource with embeddings
             resource = Resource(
                 uri=uri,
                 name=name,
@@ -254,7 +258,12 @@ class ResourceManager:
                 resource_type=resource_type,
                 owner_id=owner_id,
                 content=content,
-                metadata=resource_metadata
+                metadata=resource_metadata,
+                embeddings=embeddings,
+                chunks=chunks,
+                embeddings_model=metadata.get('embeddings_model') if metadata else None,
+                embeddings_created_at=datetime.utcnow() if embeddings else None,
+                embeddings_chunk_count=len(chunks) if chunks else 0
             )
             
             # Save to database

@@ -28,6 +28,12 @@ class Config:
     # GPU backend configuration
     gpu_backend: str = field(default_factory=lambda: os.getenv("GPU_BACKEND", "auto"))  # auto, cuda, metal, cpu
     
+    # Embedding configuration
+    embedding_provider: str = field(default_factory=lambda: os.getenv("EMBEDDING_PROVIDER", "ollama"))  # ollama or openai
+    embedding_model: Optional[str] = field(default_factory=lambda: os.getenv("EMBEDDING_MODEL"))  # Auto-detected per provider if not set
+    embedding_chunk_size: int = field(default_factory=lambda: int(os.getenv("EMBEDDING_CHUNK_SIZE", "1000")))
+    embedding_enabled: bool = field(default_factory=lambda: os.getenv("EMBEDDING_ENABLED", "true").lower() == "true")
+    
     # UI configuration
     ui_host: str = field(default_factory=lambda: os.getenv("UI_HOST", "localhost"))
     ui_port: int = field(default_factory=lambda: int(os.getenv("UI_PORT", "8501")))
