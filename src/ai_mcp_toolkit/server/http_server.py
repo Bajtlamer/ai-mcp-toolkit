@@ -1562,8 +1562,10 @@ class HTTPServer:
                     }
                 ]
                 
-                # Execute search
-                results = await Resource.aggregate(pipeline).to_list()
+                # Execute search (using raw MongoDB collection for vector search)
+                collection = Resource.get_pymongo_collection()
+                cursor = collection.aggregate(pipeline)
+                results = await cursor.to_list(length=None)
                 
                 # Format results
                 formatted_results = [
@@ -1657,7 +1659,10 @@ class HTTPServer:
                     }
                 ]
                 
-                results = await Resource.aggregate(pipeline).to_list()
+                # Use raw MongoDB collection for vector search
+                collection = Resource.get_pymongo_collection()
+                cursor = collection.aggregate(pipeline)
+                results = await cursor.to_list(length=None)
                 
                 formatted_results = [
                     {
@@ -1753,7 +1758,10 @@ class HTTPServer:
                     }
                 ]
                 
-                similar = await Resource.aggregate(pipeline).to_list()
+                # Use raw MongoDB collection for vector search
+                collection = Resource.get_pymongo_collection()
+                cursor = collection.aggregate(pipeline)
+                similar = await cursor.to_list(length=None)
                 
                 formatted_results = [
                     {

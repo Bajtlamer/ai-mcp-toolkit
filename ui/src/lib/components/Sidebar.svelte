@@ -19,7 +19,8 @@
     X,
     Cpu,
     Activity,
-    Database
+    Database,
+    Search
   } from 'lucide-svelte';
   
   const dispatch = createEventDispatcher();
@@ -43,6 +44,7 @@
     { name: 'Dashboard', href: '/', icon: Home },
     { name: 'GPU Monitor', href: '/gpu', icon: Cpu },
     { name: 'AI Chat', href: '/chat', icon: MessageSquare },
+    { name: 'Semantic Search', href: '/search', icon: Search },
     { name: 'Resources', href: '/resources', icon: Database },
     {
       name: 'AI Agents',
