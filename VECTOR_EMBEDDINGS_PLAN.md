@@ -1079,7 +1079,7 @@ If issues occur:
 | 1 | Database Schema | 30 min | ✅ **DONE** (2025-10-28) |
 | 2 | Embedding Service | 1-2 hours | ✅ **DONE** (2025-10-28) |
 | 3 | Upload Integration | 1 hour | ✅ **DONE** (2025-10-28) |
-| 4 | Search API | 1-2 hours | ⏸️ Pending |
+| 4 | Search API | 1-2 hours | ✅ **DONE** (2025-10-28) |
 | 5 | RAG Chat | 1-2 hours | ⏸️ Pending |
 | 6 | Background Jobs | 1 hour | ⏸️ Pending |
 | 7 | Frontend | 2-3 hours | ⏸️ Pending |

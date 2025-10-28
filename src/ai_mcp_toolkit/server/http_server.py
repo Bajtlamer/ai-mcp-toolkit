@@ -1487,6 +1487,305 @@ class HTTPServer:
                 self.logger.error(f"Error searching resources: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
         
+        @app.post("/resources/search/semantic")
+        async def semantic_search_resources(
+            query: str = Form(...),
+            limit: int = Form(10),
+            min_score: float = Form(0.5),
+            user: User = Depends(require_auth)
+        ):
+            """
+            Search resources using semantic similarity (vector search).
+            
+            Args:
+                query: Natural language search query
+                limit: Maximum results to return
+                min_score: Minimum similarity score (0-1)
+            
+            Returns:
+                List of resources with similarity scores
+            """
+            try:
+                if not self.config.embedding_enabled:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Semantic search is disabled. Enable EMBEDDING_ENABLED in config."
+                    )
+                
+                from ..managers.embedding_manager import get_embedding_manager
+                
+                # Generate query embedding
+                self.logger.info(f"Semantic search: '{query}' (limit={limit}, min_score={min_score})")
+                embedding_manager = get_embedding_manager(
+                    provider=self.config.embedding_provider,
+                    model=self.config.embedding_model
+                )
+                query_embedding = await embedding_manager.generate_embedding(query)
+                
+                if not query_embedding:
+                    raise HTTPException(status_code=400, detail="Failed to generate query embedding")
+                
+                # Vector search pipeline
+                pipeline = [
+                    {
+                        "$vectorSearch": {
+                            "index": "resource_vector_index",
+                            "path": "embeddings",
+                            "queryVector": query_embedding,
+                            "numCandidates": 100,
+                            "limit": limit,
+                            "filter": {
+                                "owner_id": str(user.id)  # User isolation
+                            }
+                        }
+                    },
+                    {
+                        "$addFields": {
+                            "score": {"$meta": "vectorSearchScore"}
+                        }
+                    },
+                    {
+                        "$match": {
+                            "score": {"$gte": min_score}
+                        }
+                    },
+                    {
+                        "$project": {
+                            "uri": 1,
+                            "name": 1,
+                            "description": 1,
+                            "mime_type": 1,
+                            "resource_type": 1,
+                            "created_at": 1,
+                            "score": 1
+                        }
+                    }
+                ]
+                
+                # Execute search
+                results = await Resource.aggregate(pipeline).to_list()
+                
+                # Format results
+                formatted_results = [
+                    {
+                        "uri": r["uri"],
+                        "name": r["name"],
+                        "description": r["description"],
+                        "mimeType": r["mime_type"],
+                        "resourceType": r["resource_type"],
+                        "createdAt": r["created_at"].isoformat(),
+                        "score": r["score"]
+                    }
+                    for r in results
+                ]
+                
+                self.logger.info(
+                    f"Semantic search by {user.username}: '{query}' "
+                    f"returned {len(formatted_results)} results"
+                )
+                
+                return {
+                    "query": query,
+                    "results": formatted_results,
+                    "count": len(formatted_results)
+                }
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Semantic search error: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.post("/resources/search/chunks")
+        async def search_resource_chunks(
+            query: str = Form(...),
+            limit: int = Form(10),
+            user: User = Depends(require_auth)
+        ):
+            """
+            Search within document chunks for precise matches.
+            
+            For large documents that were chunked, this searches
+            within individual chunks for more precise results.
+            """
+            try:
+                if not self.config.embedding_enabled:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Semantic search is disabled. Enable EMBEDDING_ENABLED in config."
+                    )
+                
+                from ..managers.embedding_manager import get_embedding_manager
+                
+                embedding_manager = get_embedding_manager(
+                    provider=self.config.embedding_provider,
+                    model=self.config.embedding_model
+                )
+                query_embedding = await embedding_manager.generate_embedding(query)
+                
+                if not query_embedding:
+                    raise HTTPException(status_code=400, detail="Failed to generate query embedding")
+                
+                pipeline = [
+                    {
+                        "$vectorSearch": {
+                            "index": "resource_chunks_vector_index",
+                            "path": "chunks.embeddings",
+                            "queryVector": query_embedding,
+                            "numCandidates": 100,
+                            "limit": limit,
+                            "filter": {
+                                "owner_id": str(user.id)
+                            }
+                        }
+                    },
+                    {
+                        "$addFields": {
+                            "score": {"$meta": "vectorSearchScore"}
+                        }
+                    },
+                    {
+                        "$unwind": "$chunks"
+                    },
+                    {
+                        "$project": {
+                            "uri": 1,
+                            "name": 1,
+                            "chunk": "$chunks",
+                            "score": 1
+                        }
+                    }
+                ]
+                
+                results = await Resource.aggregate(pipeline).to_list()
+                
+                formatted_results = [
+                    {
+                        "uri": r["uri"],
+                        "name": r["name"],
+                        "chunkIndex": r["chunk"]["index"],
+                        "chunkText": r["chunk"]["text"],
+                        "charStart": r["chunk"]["char_start"],
+                        "charEnd": r["chunk"]["char_end"],
+                        "score": r["score"]
+                    }
+                    for r in results
+                ]
+                
+                self.logger.info(
+                    f"Chunk search by {user.username}: '{query}' "
+                    f"returned {len(formatted_results)} chunks"
+                )
+                
+                return {
+                    "query": query,
+                    "chunks": formatted_results,
+                    "count": len(formatted_results)
+                }
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Chunk search error: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.get("/resources/{uri:path}/similar")
+        async def find_similar_resources(
+            uri: str,
+            limit: int = 5,
+            user: User = Depends(require_auth)
+        ):
+            """
+            Find resources similar to a given resource.
+            
+            Useful for:
+            - "More like this" recommendations
+            - Duplicate detection
+            - Content clustering
+            """
+            try:
+                if not self.config.embedding_enabled:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Semantic search is disabled. Enable EMBEDDING_ENABLED in config."
+                    )
+                
+                # Get the source resource
+                resource = await Resource.find_one(
+                    Resource.uri == uri,
+                    Resource.owner_id == str(user.id)
+                )
+                
+                if not resource or not resource.embeddings:
+                    raise HTTPException(
+                        status_code=404,
+                        detail="Resource not found or has no embeddings"
+                    )
+                
+                # Find similar resources
+                pipeline = [
+                    {
+                        "$vectorSearch": {
+                            "index": "resource_vector_index",
+                            "path": "embeddings",
+                            "queryVector": resource.embeddings,
+                            "numCandidates": 50,
+                            "limit": limit + 1,  # +1 because it includes itself
+                            "filter": {"owner_id": str(user.id)}
+                        }
+                    },
+                    {"$addFields": {"score": {"$meta": "vectorSearchScore"}}},
+                    {
+                        "$match": {
+                            "uri": {"$ne": uri}  # Exclude the source document
+                        }
+                    },
+                    {"$limit": limit},
+                    {
+                        "$project": {
+                            "uri": 1,
+                            "name": 1,
+                            "description": 1,
+                            "mime_type": 1,
+                            "created_at": 1,
+                            "score": 1
+                        }
+                    }
+                ]
+                
+                similar = await Resource.aggregate(pipeline).to_list()
+                
+                formatted_results = [
+                    {
+                        "uri": r["uri"],
+                        "name": r["name"],
+                        "description": r["description"],
+                        "mimeType": r["mime_type"],
+                        "createdAt": r["created_at"].isoformat(),
+                        "score": r["score"]
+                    }
+                    for r in similar
+                ]
+                
+                self.logger.info(
+                    f"Found {len(formatted_results)} similar resources to {uri}"
+                )
+                
+                return {
+                    "source": {
+                        "uri": resource.uri,
+                        "name": resource.name
+                    },
+                    "similar_resources": formatted_results,
+                    "count": len(formatted_results)
+                }
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Similar resources error: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
         @app.get("/resources/stats/count")
         async def get_resource_count(resource_type: Optional[str] = None):
             """Get count of resources."""
