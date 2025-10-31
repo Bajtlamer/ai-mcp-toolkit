@@ -73,7 +73,12 @@ class DatabaseManager:
     
     async def _init_beanie(self) -> None:
         """Initialize Beanie with document models."""
-        from .documents import User, Session, AuditLog, Resource, Prompt, Message, Conversation, AgentState, Workflow
+        from .documents import (
+            User, Session, AuditLog, 
+            Resource, ResourceChunk,
+            Prompt, Message, Conversation, 
+            AgentState, Workflow
+        )
         
         # List of all document models
         document_models = [
@@ -81,6 +86,7 @@ class DatabaseManager:
             Session,
             AuditLog,
             Resource,
+            ResourceChunk,  # NEW: For contextual search chunks
             Prompt,
             Message,
             Conversation,

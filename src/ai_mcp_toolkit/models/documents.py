@@ -164,8 +164,9 @@ class User(Document):
 
 
 class Resource(Document):
-    """Resource document model for MCP resources."""
+    """Resource document model for MCP resources with contextual search support."""
     
+    # === Core identification ===
     uri: Indexed(str, unique=True)
     name: str
     description: str
@@ -173,17 +174,50 @@ class Resource(Document):
     resource_type: ResourceType
     content: Optional[str] = None
     owner_id: Optional[str] = None  # User ID who owns this resource
-    metadata: ResourceMetadata = Field(default_factory=ResourceMetadata)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
     
-    # Vector embeddings fields for semantic search
-    embeddings: Optional[List[float]] = None  # Main embedding vector (768 dims for nomic-embed-text)
-    embeddings_model: Optional[str] = None  # e.g., "nomic-embed-text", "text-embedding-3-small"
+    # === NEW: Extended file identifiers ===
+    file_id: Optional[str] = None  # Unique file identifier (e.g., "files/2025/10/INV-1234.pdf")
+    file_name: Optional[str] = None  # Original filename
+    file_type: Optional[str] = None  # "pdf", "text", "csv", "image", "structured"
+    
+    # === NEW: Multi-tenant / ACL ===
+    company_id: Optional[str] = None  # For tenant isolation (defaults to owner_id)
+    
+    # === NEW: File metadata ===
+    size_bytes: Optional[int] = None
+    tags: List[str] = Field(default_factory=list)
+    summary: Optional[str] = None  # AI-generated summary
+    
+    # === NEW: Structured data fields for contextual search ===
+    vendor: Optional[str] = None  # Normalized vendor name (e.g., "google", "t-mobile")
+    currency: Optional[str] = None  # ISO currency code ("USD", "EUR", "CZK")
+    amounts_cents: List[int] = Field(default_factory=list)  # Money amounts in cents [930, 1500]
+    invoice_no: Optional[str] = None  # Invoice number
+    entities: List[str] = Field(default_factory=list)  # Named entities ["t-mobile", "contract"]
+    keywords: List[str] = Field(default_factory=list)  # Exact searchable values (IDs, emails, phone numbers)
+    dates: List[datetime] = Field(default_factory=list)  # Extracted dates
+    
+    # === NEW: Image-specific fields ===
+    image_labels: List[str] = Field(default_factory=list)  # ["london", "bridge", "cityscape"]
+    ocr_text: Optional[str] = None  # Extracted text from images
+    image_width: Optional[int] = None
+    image_height: Optional[int] = None
+    
+    # === NEW: CSV-specific fields ===
+    csv_schema: Optional[Dict[str, Any]] = None  # {"columns": ["date", "amount", "vendor"]}
+    csv_stats: Optional[Dict[str, Any]] = None  # {"rowCount": 123, "minAmount": 100}
+    
+    # === Multi-modal embeddings ===
+    text_embedding: Optional[List[float]] = None  # Text semantic vector (1536 dims)
+    image_embedding: Optional[List[float]] = None  # Image semantic vector (768 dims)
+    embeddings_model: Optional[str] = None  # Model used for embeddings
     embeddings_created_at: Optional[datetime] = None
     embeddings_chunk_count: Optional[int] = None
     
-    # For chunked documents (large files split into searchable chunks)
+    # === Legacy embeddings field (deprecated, use text_embedding) ===
+    embeddings: Optional[List[float]] = None  # For backward compatibility
+    
+    # === For chunked documents ===
     chunks: Optional[List[Dict[str, Any]]] = None
     # chunks format: [
     #   {
@@ -196,6 +230,11 @@ class Resource(Document):
     #   ...
     # ]
     
+    # === Metadata ===
+    metadata: ResourceMetadata = Field(default_factory=ResourceMetadata)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
     class Settings:
         name = "resources"
         indexes = [
@@ -203,9 +242,79 @@ class Resource(Document):
             "name",
             "resource_type",
             "owner_id",
+            "company_id",
+            "file_type",
+            "vendor",
+            "currency",
             "created_at",
             [("resource_type", 1), ("created_at", -1)],
             [("owner_id", 1), ("created_at", -1)],
+            [("company_id", 1), ("created_at", -1)],
+            [("file_type", 1), ("created_at", -1)],
+            [("vendor", 1), ("created_at", -1)],
+            [("currency", 1), ("amounts_cents", 1)],
+            [("dates", 1), ("created_at", -1)],
+        ]
+
+
+class ResourceChunk(Document):
+    """Chunk/part of a larger resource (PDF pages, CSV rows, image regions)."""
+    
+    # === Parent reference ===
+    parent_id: Indexed(str)  # Reference to Resource._id
+    resource_uri: Optional[str] = None  # For easy lookup
+    
+    # === Chunk identification ===
+    chunk_type: str  # "text", "page", "row", "cell", "region"
+    chunk_index: int  # Sequential index within parent
+    
+    # === Location metadata ===
+    page_number: Optional[int] = None  # For PDFs
+    row_index: Optional[int] = None  # For CSVs
+    col_index: Optional[int] = None  # For CSV cells
+    bbox: Optional[List[float]] = None  # [x, y, width, height] for images/PDFs
+    
+    # === Content ===
+    text: Optional[str] = None  # Extracted text
+    text_embedding: Optional[List[float]] = None  # Text semantic vector
+    image_embedding: Optional[List[float]] = None  # Image semantic vector
+    
+    # === Structured fields (inherited from parent for search) ===
+    company_id: str  # ACL - copied from parent
+    owner_id: str  # Owner - copied from parent
+    file_type: Optional[str] = None  # File type - copied from parent
+    file_name: Optional[str] = None  # Filename - copied from parent
+    
+    # === Searchable data ===
+    currency: Optional[str] = None
+    amounts_cents: List[int] = Field(default_factory=list)
+    entities: List[str] = Field(default_factory=list)
+    keywords: List[str] = Field(default_factory=list)  # Exact values (for CSV cells)
+    dates: List[datetime] = Field(default_factory=list)
+    
+    # === Image-specific ===
+    image_labels: List[str] = Field(default_factory=list)
+    ocr_text: Optional[str] = None
+    
+    # === Metadata ===
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    class Settings:
+        name = "resource_chunks"
+        indexes = [
+            "parent_id",
+            "company_id",
+            "owner_id",
+            "chunk_type",
+            "file_type",
+            "page_number",
+            "row_index",
+            "created_at",
+            [("parent_id", 1), ("chunk_index", 1)],
+            [("company_id", 1), ("created_at", -1)],
+            [("chunk_type", 1), ("created_at", -1)],
+            [("currency", 1), ("amounts_cents", 1)],
+            [("dates", 1)],
         ]
 
 
