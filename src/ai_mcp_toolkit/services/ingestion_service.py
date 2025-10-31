@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from bson import ObjectId
 
-from ..models.documents import Resource, ResourceChunk
+from ..models.documents import Resource, ResourceChunk, ResourceType
 from ..processors import (
     PDFProcessor,
     CSVProcessor,
@@ -96,23 +96,34 @@ class IngestionService:
             if file_metadata.get('file_type') == 'image':
                 image_embedding = await self.embedding_service.embed_image(file_bytes)
             
-            # Create Resource document
+            # Create Resource document with BOTH old (MCP) and new (search) fields
+            file_id = f"files/{datetime.utcnow().strftime('%Y/%m')}/{filename}"
+            uri = f"file:///{user_id}/{filename}"  # MCP-compatible URI
+            summary_text = file_metadata.get('summary', '') or f"Uploaded file: {filename}"
+            
             resource = Resource(
-                file_id=f"files/{datetime.utcnow().strftime('%Y/%m')}/{filename}",
-                file_name=filename,
+                # OLD/Required MCP fields
+                uri=uri,
+                name=filename,
+                description=summary_text,
                 mime_type=mime_type,
-                size_bytes=file_metadata.get('size_bytes', len(file_bytes)),
-                company_id=company_id,
-                uploaded_by=user_id,
-                tags=tags or [],
+                resource_type=ResourceType.FILE,
+                owner_id=user_id,
+                
+                # NEW contextual search fields
+                file_id=file_id,
+                file_name=filename,
                 file_type=file_metadata.get('file_type', 'unknown'),
+                company_id=company_id,
+                size_bytes=file_metadata.get('size_bytes', len(file_bytes)),
+                tags=tags or [],
                 vendor=file_metadata.get('vendor'),
                 currency=file_metadata.get('currency'),
                 amounts_cents=file_metadata.get('amounts_cents', []),
                 entities=file_metadata.get('entities', []),
                 keywords=file_metadata.get('keywords', []),
                 dates=file_metadata.get('dates', []),
-                summary=file_metadata.get('summary', ''),
+                summary=summary_text,
                 text_embedding=file_embedding,
                 image_embedding=image_embedding,
                 metadata=file_metadata,
@@ -175,23 +186,35 @@ class IngestionService:
             file_text = file_metadata.get('summary', '') or title
             file_embedding = await self.embedding_service.embed_text(file_text)
             
-            # Create Resource document
+            # Create Resource document with BOTH old (MCP) and new (search) fields
+            file_id = f"snippets/{datetime.utcnow().strftime('%Y/%m')}/{ObjectId()}"
+            uri = f"text:///{user_id}/{title.replace(' ', '-')}"
+            summary_text = file_metadata.get('summary', '') or title
+            
             resource = Resource(
-                file_id=f"snippets/{datetime.utcnow().strftime('%Y/%m')}/{ObjectId()}",
-                file_name=title,
+                # OLD/Required MCP fields
+                uri=uri,
+                name=title,
+                description=summary_text,
                 mime_type='text/plain',
-                size_bytes=file_metadata.get('size_bytes', 0),
-                company_id=company_id,
-                uploaded_by=user_id,
-                tags=tags or [],
+                resource_type=ResourceType.TEXT,
+                owner_id=user_id,
+                content=text_content[:10000],  # Store first 10k chars
+                
+                # NEW contextual search fields
+                file_id=file_id,
+                file_name=title,
                 file_type='snippet',
+                company_id=company_id,
+                size_bytes=file_metadata.get('size_bytes', 0),
+                tags=tags or [],
                 vendor=file_metadata.get('vendor'),
                 currency=file_metadata.get('currency'),
                 amounts_cents=file_metadata.get('amounts_cents', []),
                 entities=file_metadata.get('entities', []),
                 keywords=file_metadata.get('keywords', []),
                 dates=file_metadata.get('dates', []),
-                summary=file_metadata.get('summary', ''),
+                summary=summary_text,
                 text_embedding=file_embedding,
                 metadata=file_metadata,
             )
@@ -235,20 +258,23 @@ class IngestionService:
         
         for chunk_data, embedding in zip(chunks_data, embeddings):
             chunk = ResourceChunk(
-                resource_id=resource.id,
+                parent_id=str(resource.id),
+                resource_uri=resource.uri,
                 company_id=resource.company_id,
+                owner_id=resource.owner_id,
+                file_name=resource.file_name,
+                file_type=resource.file_type,
                 chunk_type=chunk_data.get('chunk_type', 'unknown'),
                 chunk_index=chunk_data.get('chunk_index', 0),
                 text=chunk_data.get('text', ''),
                 text_embedding=embedding,
                 page_number=chunk_data.get('page_number'),
-                row_number=chunk_data.get('row_number'),
+                row_index=chunk_data.get('row_number'),
                 currency=chunk_data.get('currency'),
                 amounts_cents=chunk_data.get('amounts_cents', []),
                 entities=chunk_data.get('entities', []),
                 keywords=chunk_data.get('keywords', []),
                 dates=chunk_data.get('dates', []),
-                metadata=chunk_data,
             )
             
             chunks_to_insert.append(chunk)

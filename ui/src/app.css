@@ -57,6 +57,10 @@
     @apply bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200;
   }
   
+  .badge-secondary {
+    @apply bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200;
+  }
+  
   .badge-success {
     @apply bg-success-100 text-success-800 dark:bg-success-900 dark:text-success-200;
   }

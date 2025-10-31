@@ -39,13 +39,24 @@ export async function getResource(uri) {
 }
 
 /**
- * Upload a file as a resource
+ * Upload a file as a resource using v2 endpoint with full ingestion processing
+ * - Automatic file type detection and processing
+ * - Smart metadata extraction (amounts, dates, entities, keywords)
+ * - Vector embeddings generation for semantic search
+ * - Chunk-level indexing for precise results
  */
-export async function uploadResource(file, name, description) {
+export async function uploadResource(file, tags = []) {
   const formData = new FormData();
   formData.append('file', file);
-  if (name) formData.append('name', name);
-  formData.append('description', description);
+  
+  // Tags for categorization
+  if (Array.isArray(tags) && tags.length > 0) {
+    formData.append('tags', tags.join(','));
+  } else if (typeof tags === 'string' && tags) {
+    formData.append('tags', tags);
+  } else {
+    formData.append('tags', '');
+  }
   
   const response = await fetch(`${API_BASE}/resources/upload`, {
     method: 'POST',

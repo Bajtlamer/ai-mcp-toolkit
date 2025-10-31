@@ -1094,263 +1094,24 @@ class HTTPServer:
                 self.logger.error(f"Error listing resources: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
         
-        @app.post("/resources/upload", response_model=ResourceResponse, status_code=201)
+        @app.post("/resources/upload", status_code=201)
         async def upload_resource(
-            file: UploadFile = File(...),
-            name: str = Form(None),
-            description: str = Form(...),
-            user: User = Depends(require_auth)
-        ):
-            """Upload a file as a resource with automatic detection and unique naming."""
-            try:
-                import uuid
-                import hashlib
-                import base64
-                from pathlib import Path
-                from datetime import datetime
-                
-                # Read file content
-                content_bytes = await file.read()
-                
-                # Calculate content hash for deduplication detection
-                content_hash = hashlib.sha256(content_bytes).hexdigest()
-                
-                # Auto-detect MIME type (trust browser but verify with python-magic if available)
-                mime_type = file.content_type or 'application/octet-stream'
-                
-                # Try to detect MIME type more accurately using magic numbers
-                try:
-                    import magic
-                    detected_mime = magic.from_buffer(content_bytes[:2048], mime=True)
-                    if detected_mime and detected_mime != 'application/octet-stream':
-                        mime_type = detected_mime
-                        self.logger.info(f"Detected MIME type: {mime_type} (browser sent: {file.content_type})")
-                except (ImportError, Exception) as e:
-                    # python-magic not available or failed, use browser-provided type
-                    self.logger.debug(f"MIME detection via magic failed: {e}")
-                    pass
-                
-                # Generate unique filename with UUID
-                file_extension = Path(file.filename).suffix.lower() if file.filename else ''
-                unique_id = uuid.uuid4()
-                unique_filename = f"{unique_id}{file_extension}"
-                
-                # Create user-scoped URI with unique filename
-                uri = f"file:///{user.id}/{unique_filename}"
-                
-                # Determine if it's a text file we can store directly
-                is_text = mime_type.startswith('text/') or mime_type in [
-                    'application/json', 'application/xml', 'application/javascript',
-                    'application/x-javascript', 'application/x-httpd-php'
-                ]
-                
-                # Detect file structure and category
-                file_category = self._detect_file_category(mime_type, file_extension)
-                
-                # Build comprehensive metadata
-                metadata = {
-                    'original_filename': file.filename,
-                    'unique_filename': unique_filename,
-                    'file_size': len(content_bytes),
-                    'file_size_human': self._format_file_size(len(content_bytes)),
-                    'content_hash': content_hash,
-                    'mime_type_detected': mime_type,
-                    'mime_type_browser': file.content_type,
-                    'file_extension': file_extension,
-                    'file_category': file_category,
-                    'upload_timestamp': datetime.utcnow().isoformat(),
-                    'is_binary': not is_text,
-                    'uploaded_by': user.username
-                }
-                
-                # Check for duplicate content (warning only, not blocking)
-                duplicate_check = await Resource.find_one(
-                    Resource.owner_id == str(user.id),
-                    Resource.metadata.properties.content_hash == content_hash
-                )
-                if duplicate_check:
-                    metadata['duplicate_of'] = str(duplicate_check.id)
-                    metadata['duplicate_warning'] = f"Same content as '{duplicate_check.name}' uploaded on {duplicate_check.created_at.isoformat()}"
-                    self.logger.info(f"User {user.username} uploading duplicate content (hash: {content_hash[:16]}...)")
-                
-                # Process content based on file type
-                content_str = None
-                
-                # For text files under 10MB, store content directly
-                if is_text and len(content_bytes) < 10 * 1024 * 1024:  # 10MB limit
-                    try:
-                        content_str = content_bytes.decode('utf-8')
-                        metadata['encoding'] = 'utf-8'
-                        metadata['char_count'] = len(content_str)
-                        metadata['line_count'] = content_str.count('\n') + 1
-                    except UnicodeDecodeError:
-                        # If decode fails, treat as binary
-                        is_text = False
-                        metadata['is_binary'] = True
-                        self.logger.warning(f"File {file.filename} marked as text but decode failed")
-                
-                # For binary files
-                if not is_text or content_str is None:
-                    if mime_type == 'application/pdf':
-                        # Store PDF bytes as base64 for later text extraction
-                        metadata['pdf_bytes'] = base64.b64encode(content_bytes).decode('utf-8')
-                        
-                        # Try to extract PDF info
-                        try:
-                            from pypdf import PdfReader
-                            import io
-                            pdf_file = io.BytesIO(content_bytes)
-                            reader = PdfReader(pdf_file)
-                            metadata['pdf_pages'] = len(reader.pages)
-                            if reader.metadata:
-                                metadata['pdf_title'] = reader.metadata.get('/Title', '')
-                                metadata['pdf_author'] = reader.metadata.get('/Author', '')
-                                metadata['pdf_subject'] = reader.metadata.get('/Subject', '')
-                        except Exception as e:
-                            self.logger.warning(f"Could not extract PDF metadata: {e}")
-                        
-                        content_str = f"[PDF file: {file.filename}, {metadata['file_size_human']}, {metadata.get('pdf_pages', '?')} pages]"
-                    
-                    elif mime_type.startswith('image/'):
-                        # Store image metadata
-                        try:
-                            from PIL import Image
-                            import io
-                            img = Image.open(io.BytesIO(content_bytes))
-                            metadata['image_width'] = img.width
-                            metadata['image_height'] = img.height
-                            metadata['image_format'] = img.format
-                            metadata['image_mode'] = img.mode
-                        except Exception as e:
-                            self.logger.warning(f"Could not extract image metadata: {e}")
-                        
-                        content_str = f"[Image file: {file.filename}, {metadata['file_size_human']}, {metadata.get('image_width', '?')}x{metadata.get('image_height', '?')}]"
-                    
-                    else:
-                        # Generic binary file
-                        content_str = f"[Binary file: {file.filename}, {metadata['file_size_human']}, {mime_type}]"
-                
-                
-                # Use provided name or original filename
-                resource_name = name or file.filename
-                
-                # Auto-generate description if not provided
-                if not description or description.strip() == '':
-                    description = f"{file_category.title()} file: {file.filename} ({metadata['file_size_human']})"
-                    if 'duplicate_warning' in metadata:
-                        description += " [Duplicate content detected]"
-                
-                # Generate embeddings if enabled and we have text content
-                embeddings = None
-                chunks = None
-                embeddings_chunk_count = 0
-                
-                if self.config.embedding_enabled and content_str and len(content_str.strip()) > 0:
-                    try:
-                        self.logger.info(f"Generating embeddings for {file.filename}...")
-                        
-                        from ..managers.embedding_manager import get_embedding_manager
-                        embedding_manager = get_embedding_manager(
-                            provider=self.config.embedding_provider,
-                            model=self.config.embedding_model
-                        )
-                        
-                        # Generate embeddings with chunking for large docs
-                        embedding_result = await embedding_manager.embed_document(
-                            text=content_str,
-                            chunk_if_large=True,
-                            chunk_size=self.config.embedding_chunk_size
-                        )
-                        
-                        embeddings = embedding_result['embeddings']
-                        chunks = embedding_result['chunks']
-                        embeddings_chunk_count = embedding_result['chunk_count']
-                        
-                        # Add embedding metadata
-                        metadata['embeddings_model'] = embedding_manager.model
-                        metadata['embeddings_provider'] = embedding_manager.provider
-                        metadata['embeddings_dimensions'] = len(embeddings) if embeddings else 0
-                        metadata['embeddings_chunk_count'] = embeddings_chunk_count
-                        
-                        self.logger.info(
-                            f"Embeddings generated: {len(embeddings) if embeddings else 0} dims, "
-                            f"{embeddings_chunk_count} chunks"
-                        )
-                        
-                    except Exception as e:
-                        # Don't fail upload if embeddings fail
-                        self.logger.warning(f"Failed to generate embeddings for {file.filename}: {e}")
-                        metadata['embeddings_error'] = str(e)
-                
-                # Create resource with owner_id and embeddings
-                resource = await self.resource_manager.create_resource(
-                    uri=uri,
-                    name=resource_name,
-                    description=description,
-                    mime_type=mime_type,
-                    resource_type=ResourceType.FILE,
-                    owner_id=str(user.id),
-                    content=content_str,
-                    metadata=metadata,
-                    embeddings=embeddings,
-                    chunks=chunks
-                )
-                
-                self.logger.info(
-                    f"User {user.username} uploaded: {file.filename} -> {unique_filename} "
-                    f"({metadata['file_size_human']}, {file_category}, hash: {content_hash[:16]}..., "
-                    f"embeddings: {embeddings_chunk_count} chunks)"
-                )
-                
-                # Log audit event
-                await AuditLogger.log(
-                    user=user,
-                    action="resource.upload",
-                    method="POST",
-                    endpoint="/resources/upload",
-                    status_code=201,
-                    resource_type="resource",
-                    resource_id=resource.uri,
-                    request_data={
-                        'filename': file.filename,
-                        'size': len(content_bytes),
-                        'mime_type': mime_type
-                    }
-                )
-                
-                return ResourceResponse(
-                    id=str(resource.id),
-                    uri=resource.uri,
-                    name=resource.name,
-                    description=resource.description,
-                    mime_type=resource.mime_type,
-                    resource_type=resource.resource_type.value,
-                    owner_id=resource.owner_id,
-                    content=resource.content if is_text else None,
-                    created_at=resource.created_at.isoformat(),
-                    updated_at=resource.updated_at.isoformat()
-                )
-                
-            except ValueError as e:
-                raise HTTPException(status_code=409, detail=str(e))
-            except Exception as e:
-                self.logger.error(f"Error uploading file: {e}", exc_info=True)
-                raise HTTPException(status_code=500, detail=str(e))
-        
-        @app.post("/resources/upload/v2", status_code=201)
-        async def upload_resource_v2(
             file: UploadFile = File(...),
             tags: str = Form(""),
             user: User = Depends(require_auth)
         ):
             """
-            Upload a file with advanced processing and hybrid search support.
+            Upload a file for semantic search and AI processing.
             
-            Uses the new ingestion pipeline:
-            - Automatic file type detection
-            - Smart metadata extraction (amounts, dates, entities, keywords)
-            - Vector embeddings for semantic search
-            - Chunk-level indexing for precise results
+            The ingestion pipeline automatically:
+            - Detects file type (PDF, text, image, etc.)
+            - Extracts full text content from PDFs and documents
+            - Generates vector embeddings for semantic search
+            - Extracts metadata: entities, keywords, dates, amounts, vendors
+            - Creates searchable chunks for precise location matching
+            - Tags files for organization
+            
+            Supported formats: PDF, TXT, MD, JSON, images, and more
             """
             try:
                 # Read file content
@@ -1380,9 +1141,9 @@ class HTTPServer:
                 # Log audit event
                 await AuditLogger.log(
                     user=user,
-                    action="resource.upload_v2",
+                    action="resource.upload",
                     method="POST",
-                    endpoint="/resources/upload/v2",
+                    endpoint="/resources/upload",
                     status_code=201,
                     resource_type="resource",
                     resource_id=str(resource.id),
@@ -1396,18 +1157,19 @@ class HTTPServer:
                 
                 return {
                     "id": str(resource.id),
+                    "uri": resource.uri,
                     "file_id": resource.file_id,
                     "file_name": resource.file_name,
                     "file_type": resource.file_type,
                     "size_bytes": resource.size_bytes,
                     "company_id": resource.company_id,
-                    "uploaded_by": resource.uploaded_by,
+                    "owner_id": resource.owner_id,
                     "tags": resource.tags,
                     "summary": resource.summary,
                     "vendor": resource.vendor,
                     "currency": resource.currency,
                     "entities": resource.entities,
-                    "keywords": resource.keywords[:20],  # Limit to first 20
+                    "keywords": resource.keywords[:20] if resource.keywords else [],
                     "created_at": resource.created_at.isoformat(),
                 }
                 
@@ -1472,15 +1234,16 @@ class HTTPServer:
                 
                 return {
                     "id": str(resource.id),
+                    "uri": resource.uri,
                     "file_name": resource.file_name,
                     "file_type": resource.file_type,
                     "size_bytes": resource.size_bytes,
                     "company_id": resource.company_id,
-                    "uploaded_by": resource.uploaded_by,
+                    "owner_id": resource.owner_id,
                     "tags": resource.tags,
                     "summary": resource.summary,
                     "entities": resource.entities,
-                    "keywords": resource.keywords[:20],
+                    "keywords": resource.keywords[:20] if resource.keywords else [],
                     "created_at": resource.created_at.isoformat(),
                 }
                 
@@ -1675,240 +1438,6 @@ class HTTPServer:
                 raise HTTPException(status_code=404, detail=str(e))
             except Exception as e:
                 self.logger.error(f"Error deleting resource {uri}: {e}", exc_info=True)
-                raise HTTPException(status_code=500, detail=str(e))
-        
-        @app.get("/resources/search/{query}")
-        async def search_resources(query: str, limit: int = 100):
-            """Search resources by name or description."""
-            try:
-                resources = await self.resource_manager.search_resources(
-                    query=query,
-                    limit=limit
-                )
-                
-                results = [
-                    {
-                        "uri": r.uri,
-                        "name": r.name,
-                        "description": r.description,
-                        "mime_type": r.mime_type,
-                        "resource_type": r.resource_type.value
-                    }
-                    for r in resources
-                ]
-                
-                self.logger.info(f"Search '{query}' found {len(results)} resources")
-                return {"query": query, "results": results, "count": len(results)}
-                
-            except Exception as e:
-                self.logger.error(f"Error searching resources: {e}", exc_info=True)
-                raise HTTPException(status_code=500, detail=str(e))
-        
-        @app.post("/resources/search/semantic")
-        async def semantic_search_resources(
-            query: str = Form(...),
-            limit: int = Form(10),
-            min_score: float = Form(0.5),
-            user: User = Depends(require_auth)
-        ):
-            """
-            Search resources using semantic similarity (vector search).
-            
-            Args:
-                query: Natural language search query
-                limit: Maximum results to return
-                min_score: Minimum similarity score (0-1)
-            
-            Returns:
-                List of resources with similarity scores
-            """
-            try:
-                if not self.config.embedding_enabled:
-                    raise HTTPException(
-                        status_code=503,
-                        detail="Semantic search is disabled. Enable EMBEDDING_ENABLED in config."
-                    )
-                
-                from ..managers.embedding_manager import get_embedding_manager
-                
-                # Generate query embedding
-                self.logger.info(f"Semantic search: '{query}' (limit={limit}, min_score={min_score})")
-                embedding_manager = get_embedding_manager(
-                    provider=self.config.embedding_provider,
-                    model=self.config.embedding_model
-                )
-                query_embedding = await embedding_manager.generate_embedding(query)
-                
-                if not query_embedding:
-                    raise HTTPException(status_code=400, detail="Failed to generate query embedding")
-                
-                # Vector search pipeline
-                pipeline = [
-                    {
-                        "$vectorSearch": {
-                            "index": "resource_vector_index",
-                            "path": "embeddings",
-                            "queryVector": query_embedding,
-                            "numCandidates": 100,
-                            "limit": limit,
-                            "filter": {
-                                "owner_id": str(user.id)  # User isolation
-                            }
-                        }
-                    },
-                    {
-                        "$addFields": {
-                            "score": {"$meta": "vectorSearchScore"}
-                        }
-                    },
-                    {
-                        "$match": {
-                            "score": {"$gte": min_score}
-                        }
-                    },
-                    {
-                        "$project": {
-                            "uri": 1,
-                            "name": 1,
-                            "description": 1,
-                            "mime_type": 1,
-                            "resource_type": 1,
-                            "created_at": 1,
-                            "score": 1
-                        }
-                    }
-                ]
-                
-                # Execute search (using raw MongoDB collection for vector search)
-                collection = Resource.get_pymongo_collection()
-                cursor = collection.aggregate(pipeline)
-                results = await cursor.to_list(length=None)
-                
-                # Format results
-                formatted_results = [
-                    {
-                        "uri": r["uri"],
-                        "name": r["name"],
-                        "description": r["description"],
-                        "mimeType": r["mime_type"],
-                        "resourceType": r["resource_type"],
-                        "createdAt": r["created_at"].isoformat(),
-                        "score": r["score"]
-                    }
-                    for r in results
-                ]
-                
-                self.logger.info(
-                    f"Semantic search by {user.username}: '{query}' "
-                    f"returned {len(formatted_results)} results"
-                )
-                
-                return {
-                    "query": query,
-                    "results": formatted_results,
-                    "count": len(formatted_results)
-                }
-                
-            except HTTPException:
-                raise
-            except Exception as e:
-                self.logger.error(f"Semantic search error: {e}", exc_info=True)
-                raise HTTPException(status_code=500, detail=str(e))
-        
-        @app.post("/resources/search/chunks")
-        async def search_resource_chunks(
-            query: str = Form(...),
-            limit: int = Form(10),
-            user: User = Depends(require_auth)
-        ):
-            """
-            Search within document chunks for precise matches.
-            
-            For large documents that were chunked, this searches
-            within individual chunks for more precise results.
-            """
-            try:
-                if not self.config.embedding_enabled:
-                    raise HTTPException(
-                        status_code=503,
-                        detail="Semantic search is disabled. Enable EMBEDDING_ENABLED in config."
-                    )
-                
-                from ..managers.embedding_manager import get_embedding_manager
-                
-                embedding_manager = get_embedding_manager(
-                    provider=self.config.embedding_provider,
-                    model=self.config.embedding_model
-                )
-                query_embedding = await embedding_manager.generate_embedding(query)
-                
-                if not query_embedding:
-                    raise HTTPException(status_code=400, detail="Failed to generate query embedding")
-                
-                pipeline = [
-                    {
-                        "$vectorSearch": {
-                            "index": "resource_chunks_vector_index",
-                            "path": "chunks.embeddings",
-                            "queryVector": query_embedding,
-                            "numCandidates": 100,
-                            "limit": limit,
-                            "filter": {
-                                "owner_id": str(user.id)
-                            }
-                        }
-                    },
-                    {
-                        "$addFields": {
-                            "score": {"$meta": "vectorSearchScore"}
-                        }
-                    },
-                    {
-                        "$unwind": "$chunks"
-                    },
-                    {
-                        "$project": {
-                            "uri": 1,
-                            "name": 1,
-                            "chunk": "$chunks",
-                            "score": 1
-                        }
-                    }
-                ]
-                
-                # Use raw MongoDB collection for vector search
-                collection = Resource.get_pymongo_collection()
-                cursor = collection.aggregate(pipeline)
-                results = await cursor.to_list(length=None)
-                
-                formatted_results = [
-                    {
-                        "uri": r["uri"],
-                        "name": r["name"],
-                        "chunkIndex": r["chunk"]["index"],
-                        "chunkText": r["chunk"]["text"],
-                        "charStart": r["chunk"]["char_start"],
-                        "charEnd": r["chunk"]["char_end"],
-                        "score": r["score"]
-                    }
-                    for r in results
-                ]
-                
-                self.logger.info(
-                    f"Chunk search by {user.username}: '{query}' "
-                    f"returned {len(formatted_results)} chunks"
-                )
-                
-                return {
-                    "query": query,
-                    "chunks": formatted_results,
-                    "count": len(formatted_results)
-                }
-                
-            except HTTPException:
-                raise
-            except Exception as e:
-                self.logger.error(f"Chunk search error: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
         
         @app.get("/resources/{uri:path}/similar")

@@ -4,6 +4,7 @@ import logging
 import re
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+from bson import ObjectId
 
 from ..models.documents import Resource, ResourceChunk
 from .embedding_service import get_embedding_service
@@ -185,25 +186,76 @@ class SearchService:
             Resource.company_id == company_id
         ).to_list(limit * 2)
         
-        results = []
+        results_map = {}  # Use dict to track best score per resource
+        
+        # 1. Search document-level embeddings
         for resource in resources:
             if resource.text_embedding:
                 # Calculate cosine similarity
                 similarity = self._cosine_similarity(query_embedding, resource.text_embedding)
                 
-                if similarity > 0.5:  # Threshold
-                    results.append({
+                if similarity > 0.15:  # Very low threshold for better recall on proper nouns
+                    results_map[str(resource.id)] = {
                         'id': str(resource.id),
                         'file_name': resource.file_name,
                         'file_type': resource.file_type,
                         'summary': resource.summary,
                         'vendor': resource.vendor,
                         'score': similarity,
-                        'match_type': 'semantic',
+                        'match_type': 'semantic_document',
                         'created_at': resource.created_at.isoformat(),
-                    })
+                    }
         
-        # Sort by score and limit
+        # 2. Also search chunk-level embeddings (more granular, better for specific terms)
+        chunks = await ResourceChunk.find(
+            ResourceChunk.company_id == company_id
+        ).to_list(limit * 10)  # Get more chunks to search through
+        
+        chunk_matches = {}  # Track best chunk match per parent document
+        for chunk in chunks:
+            if chunk.text_embedding:
+                similarity = self._cosine_similarity(query_embedding, chunk.text_embedding)
+                
+                if similarity > 0.05:  # Very low threshold to catch brand names in context
+                    parent_id = str(chunk.parent_id)
+                    
+                    # Keep only the best matching chunk per document
+                    if parent_id not in chunk_matches or similarity > chunk_matches[parent_id]['score']:
+                        chunk_matches[parent_id] = {
+                            'score': similarity,
+                            'chunk_index': chunk.chunk_index,
+                            'chunk_text': chunk.text[:200] + '...' if len(chunk.text) > 200 else chunk.text
+                        }
+        
+        # 3. Merge chunk results with resource info
+        for parent_id, chunk_match in chunk_matches.items():
+            # Find the parent resource
+            parent = await Resource.find_one(Resource.id == ObjectId(parent_id))
+            if parent:
+                # If we already have this document from document-level search, use the higher score
+                if parent_id in results_map:
+                    if chunk_match['score'] > results_map[parent_id]['score']:
+                        results_map[parent_id]['score'] = chunk_match['score']
+                        results_map[parent_id]['match_type'] = 'semantic_chunk'
+                        results_map[parent_id]['matched_in_chunk'] = chunk_match['chunk_index']
+                        results_map[parent_id]['chunk_preview'] = chunk_match['chunk_text']
+                else:
+                    # New result from chunk search
+                    results_map[parent_id] = {
+                        'id': parent_id,
+                        'file_name': parent.file_name,
+                        'file_type': parent.file_type,
+                        'summary': parent.summary,
+                        'vendor': parent.vendor,
+                        'score': chunk_match['score'],
+                        'match_type': 'semantic_chunk',
+                        'matched_in_chunk': chunk_match['chunk_index'],
+                        'chunk_preview': chunk_match['chunk_text'],
+                        'created_at': parent.created_at.isoformat(),
+                    }
+        
+        # Convert to list and sort by score
+        results = list(results_map.values())
         results.sort(key=lambda x: x['score'], reverse=True)
         return results[:limit]
     
@@ -228,7 +280,89 @@ class SearchService:
         """
         results = []
         
-        # Search by exact IDs
+        # Search in file names, summaries, and content using text matching
+        import re
+        query_pattern = re.compile(re.escape(query), re.IGNORECASE)
+        
+        all_resources = await Resource.find(
+            Resource.company_id == company_id
+        ).to_list(limit * 3)
+        
+        for resource in all_resources:
+            score = 0.0
+            match_field = None
+            
+            # Check file_name
+            if resource.file_name and query_pattern.search(resource.file_name):
+                score = 1.0
+                match_field = 'file_name'
+            # Check summary
+            elif resource.summary and query_pattern.search(resource.summary):
+                score = 0.9
+                match_field = 'summary'
+            # Check content
+            elif resource.content and query_pattern.search(resource.content):
+                score = 0.85
+                match_field = 'content'
+            # Check keywords
+            elif resource.keywords and any(query_pattern.search(kw) for kw in resource.keywords):
+                score = 0.95
+                match_field = 'keywords'
+            # Check entities
+            elif resource.entities and any(query_pattern.search(ent) for ent in resource.entities):
+                score = 0.8
+                match_field = 'entities'
+            
+            if score > 0:
+                results.append({
+                    'id': str(resource.id),
+                    'file_name': resource.file_name,
+                    'file_type': resource.file_type,
+                    'summary': resource.summary,
+                    'vendor': resource.vendor,
+                    'score': score,
+                    'match_type': 'keyword',
+                    'matched_field': match_field,
+                    'created_at': resource.created_at.isoformat(),
+                })
+        
+        # Also search in chunks for more precise results
+        chunks = await ResourceChunk.find(
+            ResourceChunk.company_id == company_id
+        ).to_list(limit * 5)
+        
+        chunk_matches = {}
+        for chunk in chunks:
+            if chunk.text and query_pattern.search(chunk.text):
+                parent_id = chunk.parent_id
+                if parent_id not in chunk_matches or chunk_matches[parent_id]['score'] < 0.95:
+                    chunk_matches[parent_id] = {
+                        'id': parent_id,
+                        'score': 0.95,
+                        'match_type': 'chunk',
+                        'chunk_index': chunk.chunk_index,
+                        'chunk_text': chunk.text[:200] + '...' if len(chunk.text) > 200 else chunk.text
+                    }
+        
+        # Merge chunk results with resource info
+        for parent_id, chunk_match in chunk_matches.items():
+            # Find the parent resource
+            parent = await Resource.find_one(Resource.id == ObjectId(parent_id))
+            if parent:
+                results.append({
+                    'id': str(parent.id),
+                    'file_name': parent.file_name,
+                    'file_type': parent.file_type,
+                    'summary': parent.summary,
+                    'vendor': parent.vendor,
+                    'score': chunk_match['score'],
+                    'match_type': chunk_match['match_type'],
+                    'matched_in_chunk': chunk_match['chunk_index'],
+                    'chunk_preview': chunk_match['chunk_text'],
+                    'created_at': parent.created_at.isoformat(),
+                })
+        
+        # Search by exact IDs in keywords
         if query_analysis['exact_ids']:
             for exact_id in query_analysis['exact_ids']:
                 resources = await Resource.find(

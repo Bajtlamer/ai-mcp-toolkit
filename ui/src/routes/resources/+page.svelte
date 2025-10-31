@@ -395,12 +395,14 @@
     try {
       submitting = true;
       
-      // If file type with selected file, use upload endpoint
+      // If file type with selected file, use upload endpoint (v2 with full ingestion)
       if (formData.resource_type === 'file' && selectedFile) {
+        // Extract tags from form if available, or use empty array
+        const tags = formData.tags ? formData.tags.split(',').map(t => t.trim()).filter(t => t) : [];
+        
         await resourceAPI.uploadResource(
           selectedFile,
-          formData.name,
-          formData.description
+          tags
         );
       } else {
         // Otherwise use regular create endpoint
