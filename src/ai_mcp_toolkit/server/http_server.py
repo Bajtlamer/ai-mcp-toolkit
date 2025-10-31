@@ -29,6 +29,8 @@ from ..managers.prompt_manager import PromptManager
 from ..models.documents import ResourceType, User, UserRole, Resource
 from ..models.database import db_manager
 from ..utils.audit import AuditLogger
+from ..services.ingestion_service import get_ingestion_service
+from ..services.search_service import get_search_service
 
 logger = get_logger(__name__)
 
@@ -1333,6 +1335,221 @@ class HTTPServer:
                 raise HTTPException(status_code=409, detail=str(e))
             except Exception as e:
                 self.logger.error(f"Error uploading file: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.post("/resources/upload/v2", status_code=201)
+        async def upload_resource_v2(
+            file: UploadFile = File(...),
+            tags: str = Form(""),
+            user: User = Depends(require_auth)
+        ):
+            """
+            Upload a file with advanced processing and hybrid search support.
+            
+            Uses the new ingestion pipeline:
+            - Automatic file type detection
+            - Smart metadata extraction (amounts, dates, entities, keywords)
+            - Vector embeddings for semantic search
+            - Chunk-level indexing for precise results
+            """
+            try:
+                # Read file content
+                content_bytes = await file.read()
+                
+                # Parse tags
+                tags_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+                
+                # Get ingestion service
+                ingestion_service = get_ingestion_service()
+                
+                # Ingest file
+                resource = await ingestion_service.ingest_file(
+                    file_bytes=content_bytes,
+                    filename=file.filename or "untitled",
+                    mime_type=file.content_type or "application/octet-stream",
+                    company_id=str(user.id),  # For now, use user ID as company ID
+                    user_id=str(user.id),
+                    tags=tags_list,
+                )
+                
+                self.logger.info(
+                    f"User {user.username} uploaded file via v2: {file.filename} -> {resource.id} "
+                    f"({resource.file_type}, {len(content_bytes)} bytes)"
+                )
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="resource.upload_v2",
+                    method="POST",
+                    endpoint="/resources/upload/v2",
+                    status_code=201,
+                    resource_type="resource",
+                    resource_id=str(resource.id),
+                    request_data={
+                        'filename': file.filename,
+                        'size': len(content_bytes),
+                        'mime_type': file.content_type,
+                        'tags': tags_list
+                    }
+                )
+                
+                return {
+                    "id": str(resource.id),
+                    "file_id": resource.file_id,
+                    "file_name": resource.file_name,
+                    "file_type": resource.file_type,
+                    "size_bytes": resource.size_bytes,
+                    "company_id": resource.company_id,
+                    "uploaded_by": resource.uploaded_by,
+                    "tags": resource.tags,
+                    "summary": resource.summary,
+                    "vendor": resource.vendor,
+                    "currency": resource.currency,
+                    "entities": resource.entities,
+                    "keywords": resource.keywords[:20],  # Limit to first 20
+                    "created_at": resource.created_at.isoformat(),
+                }
+                
+            except Exception as e:
+                self.logger.error(f"Error uploading file (v2): {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.post("/resources/snippet", status_code=201)
+        async def create_snippet(
+            text: str = Form(...),
+            title: str = Form(...),
+            tags: str = Form(""),
+            snippet_source: str = Form("user_input"),
+            user: User = Depends(require_auth)
+        ):
+            """
+            Create a text snippet resource for contextual search.
+            
+            Use cases:
+            - Save copy-pasted text for later search
+            - Store AI agent outputs
+            - Quick notes and annotations
+            """
+            try:
+                # Parse tags
+                tags_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+                
+                # Get ingestion service
+                ingestion_service = get_ingestion_service()
+                
+                # Ingest snippet
+                resource = await ingestion_service.ingest_snippet(
+                    text_content=text,
+                    title=title,
+                    company_id=str(user.id),
+                    user_id=str(user.id),
+                    snippet_source=snippet_source,
+                    tags=tags_list,
+                )
+                
+                self.logger.info(
+                    f"User {user.username} created snippet: {title} -> {resource.id} "
+                    f"({len(text)} chars, source: {snippet_source})"
+                )
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="snippet.create",
+                    method="POST",
+                    endpoint="/resources/snippet",
+                    status_code=201,
+                    resource_type="snippet",
+                    resource_id=str(resource.id),
+                    request_data={
+                        'title': title,
+                        'text_length': len(text),
+                        'snippet_source': snippet_source,
+                        'tags': tags_list
+                    }
+                )
+                
+                return {
+                    "id": str(resource.id),
+                    "file_name": resource.file_name,
+                    "file_type": resource.file_type,
+                    "size_bytes": resource.size_bytes,
+                    "company_id": resource.company_id,
+                    "uploaded_by": resource.uploaded_by,
+                    "tags": resource.tags,
+                    "summary": resource.summary,
+                    "entities": resource.entities,
+                    "keywords": resource.keywords[:20],
+                    "created_at": resource.created_at.isoformat(),
+                }
+                
+            except Exception as e:
+                self.logger.error(f"Error creating snippet: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.get("/resources/search")
+        async def search_resources(
+            q: str,
+            limit: int = 20,
+            search_type: str = "auto",
+            user: User = Depends(require_auth)
+        ):
+            """
+            Contextual hybrid search across all resources.
+            
+            Query parameter examples:
+            - q="invoice from google" -> semantic search
+            - q="INV-12345" -> exact keyword match
+            - q="$9.30 USD invoice" -> hybrid search with amount filter
+            - q="t-mobile contracts" -> hybrid search with vendor filter
+            
+            Search types:
+            - auto: Automatically choose best strategy (default)
+            - semantic: Pure vector similarity search
+            - keyword: Exact matches only
+            - hybrid: Combined vector + keyword/filters
+            """
+            try:
+                # Get search service
+                search_service = get_search_service()
+                
+                # Perform search (using user ID as company ID for now)
+                results = await search_service.search(
+                    query=q,
+                    company_id=str(user.id),
+                    limit=limit,
+                    search_type=search_type
+                )
+                
+                self.logger.info(
+                    f"User {user.username} searched: '{q}' -> {results['total']} results "
+                    f"(type: {results['search_type']})"
+                )
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="resource.search",
+                    method="GET",
+                    endpoint="/resources/search",
+                    status_code=200,
+                    resource_type="search",
+                    request_data={
+                        'query': q,
+                        'limit': limit,
+                        'search_type': search_type
+                    },
+                    response_data={
+                        'total_results': results['total'],
+                        'search_type_used': results['search_type']
+                    }
+                )
+                
+                return results
+                
+            except Exception as e:
+                self.logger.error(f"Error searching resources: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
         
         @app.get("/resources/{uri:path}", response_model=Dict[str, Any])
