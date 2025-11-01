@@ -4,7 +4,182 @@
 
 This document outlines the comprehensive task list for enhancing the AI MCP Toolkit with advanced MCP protocol features, AI agent cooperation capabilities, and improved functionality to make it a compelling MCP server toolkit example.
 
-**Total Estimated Time: 8-12 weeks**
+**Total Estimated Time: 10-14 weeks** (includes Phase 0: Compound Search)
+
+---
+
+## Phase 0: Compound Search Implementation (2-3 weeks) **[IN PROGRESS]**
+
+### 0.1 Core Infrastructure
+- [x] **Task 0.1.1**: Extend ResourceChunk schema with compound search metadata ✅ **COMPLETED**
+  - [x] Add `keywords`, `currency`, `amounts_cents`, `vendor`, `entities` fields
+  - [x] Add `caption`, `image_labels`, `ocr_text`, `caption_embedding` for image search
+  - [x] Add `page_number`, `row_index`, `col_index` for deep-linking
+  - [x] Add `mime_type`, `file_type` for type-based filtering
+  - **Files**: `models/documents.py`
+  - **Date**: 2025-11-01
+
+- [x] **Task 0.1.2**: Create QueryAnalyzer utility ✅ **COMPLETED**
+  - [x] Implement regex patterns for money, IDs, dates, file types
+  - [x] Add entity extraction (capitalized words heuristic)
+  - [x] Add query cleaning (remove structured patterns for semantic search)
+  - [x] Add QueryRouter for strategy estimation
+  - **Files**: `services/query_analyzer.py`
+  - **Date**: 2025-11-01
+
+- [x] **Task 0.1.3**: Create MetadataExtractor utility ✅ **COMPLETED**
+  - [x] Implement keyword extraction (IDs, emails, IBANs, phone numbers)
+  - [x] Add vendor/company name detection heuristics
+  - [x] Add currency and amount extraction
+  - [x] Add VendorNormalizer for canonical vendor names
+  - [x] Add CSV row and image metadata extraction methods
+  - **Files**: `services/metadata_extractor.py`
+  - **Date**: 2025-11-01
+
+- [x] **Task 0.1.4**: Create ImageCaptionService (Ollama + Tesseract) ✅ **COMPLETED**
+  - [x] Implement LLaVA/Moondream image captioning
+  - [x] Add Tesseract OCR text extraction
+  - [x] Generate caption embeddings with nomic-embed-text (768 dims)
+  - [x] Add service availability checks (vision model, Tesseract)
+  - [x] Add structured caption parsing (caption + tags)
+  - **Files**: `services/image_caption_service.py`
+  - **Dependencies**: `pytesseract>=0.3.10`
+  - **Date**: 2025-11-01
+
+### 0.2 MongoDB Atlas Integration
+- [x] **Task 0.2.1**: Create compound search index definition ✅ **COMPLETED**
+  - [x] Define hybrid index with text, keyword, and numeric fields
+  - [x] Add knnVector fields for text_embedding and caption_embedding (768 dims)
+  - [x] Add filter fields for owner_id, company_id, file_type, chunk_type
+  - **Files**: `atlas_indexes/resource_chunks_compound_index.json`
+  - **Date**: 2025-11-01
+
+- [ ] **Task 0.2.2**: Deploy Atlas search index
+  - [ ] Create index via Atlas Console or CLI
+  - [ ] Verify index status (READY)
+  - [ ] Test index with sample queries
+  - **Instructions**: See `COMPOUND_SEARCH_SETUP.md`
+
+### 0.3 Ingestion Pipeline Enhancement
+- [ ] **Task 0.3.1**: Update document ingestion to extract metadata
+  - [ ] Integrate MetadataExtractor into chunk processing
+  - [ ] Populate keywords, currency, amounts_cents, vendor, entities
+  - [ ] Add file_type and mime_type detection
+  - **Files**: `services/ingestion_service.py`, `managers/resource_manager.py`
+
+- [ ] **Task 0.3.2**: Add image processing to ingestion
+  - [ ] Detect image uploads (MIME type check)
+  - [ ] Call ImageCaptionService for caption and OCR
+  - [ ] Generate caption_embedding with nomic-embed-text
+  - [ ] Store caption, image_labels, ocr_text in ResourceChunk
+  - **Files**: `services/ingestion_service.py`
+
+- [ ] **Task 0.3.3**: Add CSV row-level chunking
+  - [ ] Parse CSV files into row-level chunks
+  - [ ] Extract metadata from each row
+  - [ ] Store row_index and column data
+  - **Files**: `processors/csv_processor.py` (new)
+
+### 0.4 Compound Search Endpoint
+- [ ] **Task 0.4.1**: Implement unified `/search` endpoint
+  - [ ] Analyze query with QueryAnalyzer
+  - [ ] Build `$search.compound` query with must and should clauses
+  - [ ] Add exact filters (money, IDs, file types) to `must`
+  - [ ] Add semantic (knnBeta) and lexical (text) to `should`
+  - [ ] Execute Atlas aggregation pipeline
+  - [ ] Return results with highlights and match types
+  - **Files**: `server/http_server.py`, `services/search_service.py`
+
+- [ ] **Task 0.4.2**: Add result explainability
+  - [ ] Return Atlas `searchHighlights` for matched terms
+  - [ ] Add `match_type` field (exact_amount, exact_id, semantic_strong, hybrid)
+  - [ ] Generate `open_url` deep-links (page/row/bbox)
+  - [ ] Return query analysis for debugging
+  - **Files**: `services/search_service.py`
+
+- [ ] **Task 0.4.3**: Add image search support
+  - [ ] Detect image queries (file_type: image)
+  - [ ] Search caption, image_labels, ocr_text fields
+  - [ ] Use caption_embedding for semantic image search
+  - [ ] Return image thumbnails if available
+  - **Files**: `services/search_service.py`
+
+### 0.5 Frontend UI Updates
+- [ ] **Task 0.5.1**: Simplify search interface
+  - [ ] Remove mode selector dropdown (Auto/Semantic/Keyword/Hybrid)
+  - [ ] Keep single search input box
+  - [ ] Add loading states and error handling
+  - **Files**: `ui/src/routes/search/+page.svelte`
+
+- [ ] **Task 0.5.2**: Add result explainability UI
+  - [ ] Display match type badges (exact/semantic/hybrid)
+  - [ ] Show highlights from Atlas
+  - [ ] Add "Open" button with deep-link support
+  - [ ] Add optional "Why this result?" expander
+  - **Files**: `ui/src/routes/search/+page.svelte`
+
+- [ ] **Task 0.5.3**: Implement deep-link viewer
+  - [ ] Support `?page=N` for PDF page navigation
+  - [ ] Support `?row=N` for CSV row highlighting
+  - [ ] Support `?bbox=x,y,w,h` for image region highlighting
+  - **Files**: `ui/src/routes/resources/[id]/+page.svelte`
+
+### 0.6 Data Migration & Testing
+- [ ] **Task 0.6.1**: Create backfill script for existing data
+  - [ ] Read all existing `resource_chunks`
+  - [ ] Extract metadata using MetadataExtractor
+  - [ ] Update chunks with new fields
+  - [ ] Add progress reporting and error handling
+  - **Files**: `scripts/backfill_compound_metadata.py` (new)
+
+- [ ] **Task 0.6.2**: Create verification and test scripts
+  - [ ] Add component verification script
+  - [ ] Add end-to-end search test suite
+  - [ ] Add image processing tests
+  - [ ] Add query analyzer tests
+  - **Files**: `verify_compound_search.py`, `tests/test_compound_search.py`
+
+- [ ] **Task 0.6.3**: Performance testing and optimization
+  - [ ] Benchmark compound queries (target: <200ms)
+  - [ ] Test with large datasets (10k+ chunks)
+  - [ ] Optimize Atlas index if needed
+  - [ ] Add query result caching
+
+### 0.7 Documentation
+- [x] **Task 0.7.1**: Create setup guide ✅ **COMPLETED**
+  - [x] Document prerequisites (Ollama, LLaVA, Tesseract)
+  - [x] Add dependency installation instructions
+  - [x] Add Atlas index creation guide
+  - [x] Add verification checklist
+  - **Files**: `COMPOUND_SEARCH_SETUP.md`
+  - **Date**: 2025-11-01
+
+- [ ] **Task 0.7.2**: Update semantic search guide
+  - [ ] Document new compound search architecture
+  - [ ] Update search type explanations
+  - [ ] Add examples of query patterns
+  - **Files**: `SEMANTIC_SEARCH_GUIDE.md`
+
+- [ ] **Task 0.7.3**: Create completion report
+  - [ ] Document all implemented features
+  - [ ] Add before/after comparisons
+  - [ ] Add performance metrics
+  - [ ] Add troubleshooting guide
+  - **Files**: `COMPOUND_SEARCH_COMPLETE.md` (new)
+
+### 0.8 Dependencies & Infrastructure
+- [ ] **Task 0.8.1**: Update Python dependencies
+  - [ ] Add `pytesseract>=0.3.10` to requirements.txt
+  - [ ] Add `pytesseract>=0.3.10` to pyproject.toml
+  - [ ] Run `pip install -e .`
+  - **Files**: `requirements.txt`, `pyproject.toml`
+
+- [ ] **Task 0.8.2**: Verify external dependencies
+  - [ ] Verify Ollama with LLaVA model (`ollama pull llava`)
+  - [ ] Verify Tesseract installation (`tesseract --version`)
+  - [ ] Verify MongoDB Atlas vector search tier (M10+)
+
+---
 
 ## Phase 1: Core MCP Protocol Features (2-3 weeks)
 

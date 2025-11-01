@@ -1,0 +1,93 @@
+{
+  "database": "ai_mcp_toolkit",
+  "collectionName": "resource_chunks",
+  "name": "resource_chunks_compound",
+  "type": "search",
+  "definition": {
+    "mappings": {
+      "dynamic": false,
+      "fields": {
+        "text": {
+          "type": "string",
+          "analyzer": "lucene.standard"
+        },
+        "content": {
+          "type": "string",
+          "analyzer": "lucene.standard"
+        },
+        "keywords": {
+          "type": "string",
+          "analyzer": "lucene.keyword"
+        },
+        "vendor": {
+          "type": "string",
+          "analyzer": "lucene.keyword"
+        },
+        "currency": {
+          "type": "string",
+          "analyzer": "lucene.keyword"
+        },
+        "amounts_cents": {
+          "type": "number"
+        },
+        "file_type": {
+          "type": "string",
+          "analyzer": "lucene.keyword"
+        },
+        "mime_type": {
+          "type": "string",
+          "analyzer": "lucene.keyword"
+        },
+        "entities": {
+          "type": "string",
+          "analyzer": "lucene.standard"
+        },
+        "caption": {
+          "type": "string",
+          "analyzer": "lucene.standard"
+        },
+        "image_labels": {
+          "type": "string",
+          "analyzer": "lucene.standard"
+        },
+        "ocr_text": {
+          "type": "string",
+          "analyzer": "lucene.standard"
+        },
+        "text_embedding": {
+          "type": "knnVector",
+          "dimensions": 768,
+          "similarity": "cosine"
+        },
+        "caption_embedding": {
+          "type": "knnVector",
+          "dimensions": 768,
+          "similarity": "cosine"
+        },
+        "embedding": {
+          "type": "knnVector",
+          "dimensions": 768,
+          "similarity": "cosine"
+        },
+        "owner_id": {
+          "type": "string",
+          "analyzer": "lucene.keyword"
+        },
+        "company_id": {
+          "type": "string",
+          "analyzer": "lucene.keyword"
+        },
+        "chunk_type": {
+          "type": "string",
+          "analyzer": "lucene.keyword"
+        },
+        "page_number": {
+          "type": "number"
+        },
+        "row_index": {
+          "type": "number"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,151 @@
+This is super clear—thanks for the MD. Here’s a straight, practical comparison + what to change so you get a single smart prompt (no modes) that always returns the best results across all file types.
+
+Where your system already matches
+	•	Embeddings + Atlas vector search are in place and correct. ✔️  
+	•	You support document-level and chunk-level semantic search (good granularity). ✔️  
+	•	You rank by cosine similarity and expose a simple percent score. ✔️  
+
+What my design adds on top
+	1.	Single “smart” search endpoint (no UI modes) that:
+	•	Detects money, IDs, vendors/entities, dates, file types from the prompt.
+	•	Builds one hybrid Atlas $search query:
+	•	must ⇒ exact/structured filters (IDs, currency, amount ranges, file type, tenant)
+	•	should ⇒ knnBeta (semantic on text/image) + light lexical text
+	•	Always returns one fused ranking (no sensitivity knobs, no mode switches).
+	2.	Structured metadata at ingest (per chunk/row/region):
+	•	keywords (IDs, long numbers, emails, IBANs, order codes) for exact phrase matches.
+	•	currency + amounts (in cents as integers) for numeric range filters.
+	•	vendor / entities normalized (lowercased) for stable filters.
+	•	For images: imageEmbedding, imageLabels (caption/tags), ocrText, optional bbox.
+	3.	CSV row granularity and image search (caption + OCR + vision embedding) so the same prompt finds text rows and pictures.
+	4.	Explainability: return Atlas highlights, match_type, and deep-links (pdf page / csv row / image region).
+
+What to update/rewrite (minimal deltas)
+
+1) Keep your two collections; extend the chunk schema
+
+You already have:
+	•	resources (file-level metadata)
+	•	resource_chunks (text chunks + embeddings) ✔️  
+
+Add fields to resource_chunks (and to resources where it’s doc-level):
+	•	keywords: string[] (store exact IDs/long numbers from the text/CSV)
+	•	currency: string (e.g., “USD”)
+	•	amounts: number[] (cents)
+	•	vendor: string (normalized)
+	•	entities: string[]
+	•	file_type/mime, page, row_index, col_index, bbox (for deep links)
+	•	(later) imageEmbedding: float[], imageLabels: string[], ocrText: string
+
+2) Atlas Search index → add hybrid fields
+
+On resource_chunks, extend your Atlas index (keep your existing text vector mapping) with:
+
+{
+  "mappings": {
+    "dynamic": false,
+    "fields": {
+      "text": { "type": "string" },
+      "keywords": { "type": "string", "analyzer": "keyword" },
+      "vendor": { "type": "string", "analyzer": "keyword" },
+      "currency": { "type": "string", "analyzer": "keyword" },
+      "amounts": { "type": "number" },
+      "date": { "type": "date" },
+      "file_type": { "type": "string", "analyzer": "keyword" },
+
+      "embedding": { "type": "knnVector", "dimensions": YOUR_TEXT_DIM, "similarity": "cosine" },
+
+      "imageEmbedding": { "type": "knnVector", "dimensions": YOUR_IMG_DIM, "similarity": "cosine" },   // later
+      "imageLabels": { "type": "string" },
+      "ocrText": { "type": "string" }
+    }
+  }
+}
+
+(Leave your current vector index intact—this only adds fields so you can filter/boost without mode switches.)
+
+3) Replace multiple “modes” with one /search endpoint
+
+Internally: query analyzer → compound $search.
+
+Pseudocode (server):
+
+const must = [{ equals: { path: "tenantId", value: tenantId } }];
+
+if (money) {
+  must.push({ equals: { path: "currency", value: money.currency }});
+  must.push({ range: { path: "amounts", gte: cents*(1-band), lte: cents*(1+band) }});
+}
+for (const id of exactIds) {
+  must.push({ phrase: { path: "keywords", query: id }});
+}
+if (fileType) {
+  must.push({ equals: { path: "file_type", value: fileType }});
+}
+
+const should = [
+  { knnBeta: { path: "embedding", vector: embedText(query), k: 64 } },
+  { text: { path: ["text","vendor","entities"], query, score: { boost: { value: 2 } } } }
+];
+
+if (wantsImages) {
+  should.push({ text: { path: ["imageLabels","ocrText"], query }});
+  should.push({ knnBeta: { path: "imageEmbedding", vector: clipTextToImage(query), k: 64 }});
+}
+
+db.resource_chunks.aggregate([
+  { $search: { index: "chunks_index", compound: { must, should, minimumShouldMatch: 1 } } },
+  { $limit: 30 },
+  { $project: {
+      resource_id: 1, file_name: 1, file_type: 1, page: 1, row_index: 1, bbox: 1,
+      vendor: 1, currency: 1, amounts: 1, score: { $meta: "searchScore" },
+      highlights: { $meta: "searchHighlights" }, match_type: 1
+  } }
+]);
+
+That’s it: one prompt in, one ranked list out—no toggles necessary.
+
+4) Ingestion: enrich metadata once
+
+Your current flow already chunks, embeds, and stores to Atlas. ✔️  
+Just extend your MCP ingestion to also:
+	•	Extract IDs/long numbers → keywords[]
+	•	Parse money → currency, amounts (cents)
+	•	Heuristic/NER for vendor/entities
+	•	For CSV: create row-level chunks (text representation of the row) + push numeric tokens to keywords
+	•	For images (when you’re ready): caption → imageLabels; OCR → ocrText; image embedding → imageEmbedding
+
+No re-architecture—just more fields.
+
+5) Result formatting & deep-links
+
+Return, per hit:
+	•	open_url you construct from file_type + (page/row_index/bbox)
+	•	highlights (Atlas) so UI can render “why it matched”
+	•	score (keep your %)
+	•	optional thumb_url
+
+This addresses your “always show the best, explain it, and open exactly there”.
+
+What you can remove/avoid
+	•	UI “search type” tabs and separate endpoints aren’t needed. My approach folds semantic, keyword, and numeric/date image cues into one $search call per query.
+
+What stays the same
+	•	Your semantic core, chunking, Atlas vector search, and score display—no need to rip them out. ✔️  
+
+Why this achieves “one box, best result”
+	•	Exact constraints live in must (never missed)
+	•	Meaning lives in should via knnBeta (ranks the order)
+	•	Optional lexical text in should nudges obvious term matches
+	•	This gives you a single ranked list that naturally surfaces the right hit at top—without the user choosing a mode.
+
+⸻
+
+Minimal migration plan
+	1.	Schema enrich: add keywords, currency, amounts (cents), vendor, entities, (image* later).
+	2.	Atlas index update: add mappings above (no breaking changes).
+	3.	Ingest enrichers: regex for money/IDs, light NER for vendors.
+	4.	Single /search: implement analyzer → compound $search → unified results.
+	5.	Frontend: keep your current component; drop the mode tabs; add “Open” link + optional “Why this result?” expander.
+
+If you share one sample resource_chunks doc (current fields) and your embedding dimensions, I’ll craft the exact Atlas index JSON and a plug-in $search pipeline tailored to your names.

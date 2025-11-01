@@ -258,43 +258,62 @@ class Resource(Document):
 
 
 class ResourceChunk(Document):
-    """Chunk/part of a larger resource (PDF pages, CSV rows, image regions)."""
+    """Chunk/part of a larger resource (PDF pages, CSV rows, image regions).
+    
+    Enhanced with compound search metadata for intelligent hybrid search:
+    - Structured data extraction (money, IDs, vendors, entities)
+    - Image caption embeddings for visual search
+    - Deep-link support (page/row/bbox coordinates)
+    """
     
     # === Parent reference ===
     parent_id: Indexed(str)  # Reference to Resource._id
     resource_uri: Optional[str] = None  # For easy lookup
     
     # === Chunk identification ===
-    chunk_type: str  # "text", "page", "row", "cell", "region"
+    chunk_type: str  # "text", "page", "row", "cell", "region", "image"
     chunk_index: int  # Sequential index within parent
     
-    # === Location metadata ===
-    page_number: Optional[int] = None  # For PDFs
+    # === Location metadata (for deep-linking) ===
+    page_number: Optional[int] = None  # For PDFs (renamed from page_number for clarity)
     row_index: Optional[int] = None  # For CSVs
     col_index: Optional[int] = None  # For CSV cells
     bbox: Optional[List[float]] = None  # [x, y, width, height] for images/PDFs
     
     # === Content ===
-    text: Optional[str] = None  # Extracted text
-    text_embedding: Optional[List[float]] = None  # Text semantic vector
-    image_embedding: Optional[List[float]] = None  # Image semantic vector
+    text: Optional[str] = None  # Extracted text (was 'content' in old schema)
+    content: Optional[str] = None  # Alias for backward compatibility
+    
+    # === Multi-modal embeddings ===
+    text_embedding: Optional[List[float]] = None  # Text semantic vector (768 dims with nomic-embed-text)
+    image_embedding: Optional[List[float]] = None  # Image semantic vector (future: for actual images)
+    caption_embedding: Optional[List[float]] = None  # Caption+OCR text embedding (768 dims, same model)
+    embedding: Optional[List[float]] = None  # Alias for backward compatibility (points to text_embedding)
     
     # === Structured fields (inherited from parent for search) ===
     company_id: str  # ACL - copied from parent
     owner_id: str  # Owner - copied from parent
-    file_type: Optional[str] = None  # File type - copied from parent
+    file_type: Optional[str] = None  # "pdf", "csv", "txt", "image" - copied from parent
+    mime_type: Optional[str] = None  # MIME type (e.g., "application/pdf", "image/jpeg")
     file_name: Optional[str] = None  # Filename - copied from parent
     
-    # === Searchable data ===
-    currency: Optional[str] = None
-    amounts_cents: List[int] = Field(default_factory=list)
-    entities: List[str] = Field(default_factory=list)
-    keywords: List[str] = Field(default_factory=list)  # Exact values (for CSV cells)
-    dates: List[datetime] = Field(default_factory=list)
+    # === Compound search metadata (extracted at ingest) ===
+    # Exact match fields
+    keywords: List[str] = Field(default_factory=list)  # IDs, emails, IBANs, long numbers (exact phrase match)
+    vendor: Optional[str] = None  # Normalized vendor/company name (lowercase)
     
-    # === Image-specific ===
-    image_labels: List[str] = Field(default_factory=list)
-    ocr_text: Optional[str] = None
+    # Numeric/structured fields
+    currency: Optional[str] = None  # ISO currency ("USD", "EUR", "CZK")
+    amounts_cents: List[int] = Field(default_factory=list)  # Monetary amounts in cents for range queries
+    dates: List[datetime] = Field(default_factory=list)  # Extracted dates
+    
+    # Entity recognition
+    entities: List[str] = Field(default_factory=list)  # Named entities (people, orgs, locations)
+    
+    # === Image search fields (Ollama-only with LLaVA + Tesseract) ===
+    caption: Optional[str] = None  # AI-generated image caption (from LLaVA/Moondream)
+    image_labels: List[str] = Field(default_factory=list)  # Tags extracted from caption (e.g., ["london", "bridge"])
+    ocr_text: Optional[str] = None  # Text extracted from image via Tesseract
     
     # === Metadata ===
     created_at: datetime = Field(default_factory=datetime.utcnow)

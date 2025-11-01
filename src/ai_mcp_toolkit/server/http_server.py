@@ -1315,6 +1315,97 @@ class HTTPServer:
                 self.logger.error(f"Error searching resources: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
         
+        @app.post("/resources/compound-search")
+        async def compound_search_resources(
+            request: Dict[str, Any],
+            user: User = Depends(require_auth)
+        ):
+            """
+            Unified compound search using Atlas $search.compound.
+            
+            Automatically detects query intent and builds intelligent hybrid query:
+            - Extracts money amounts, IDs, dates, file types, vendors
+            - Applies exact filters (must) for structured data
+            - Uses semantic ranking (should) for natural language
+            - Returns explainable results with highlights and deep-links
+            
+            Request body:
+            {
+                "query": "invoice for $1234.56 from Google",
+                "limit": 30  // optional, default 30
+            }
+            
+            Response:
+            {
+                "query": "invoice for $1234.56 from Google",
+                "analysis": {
+                    "money": {"amount": 1234.56, "cents": 123456, "currency": "USD"},
+                    "ids": [],
+                    "entities": ["Google"],
+                    "clean_text": "invoice from Google"
+                },
+                "results": [
+                    {
+                        "id": "...",
+                        "file_name": "...",
+                        "score": 0.95,
+                        "match_type": "exact_amount",
+                        "open_url": "/resources/...?page=3",
+                        "highlights": [...]
+                    }
+                ],
+                "total": 5,
+                "search_strategy": "compound"
+            }
+            """
+            try:
+                query = request.get("query", "")
+                limit = request.get("limit", 30)
+                
+                if not query:
+                    raise HTTPException(status_code=400, detail="Query is required")
+                
+                # Get search service
+                search_service = get_search_service()
+                
+                # Perform compound search
+                results = await search_service.compound_search(
+                    query=query,
+                    owner_id=str(user.id),
+                    company_id=str(user.id),  # Use user ID as company ID
+                    limit=limit
+                )
+                
+                self.logger.info(
+                    f"User {user.username} compound search: '{query}' -> {results['total']} results"
+                )
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="resource.compound_search",
+                    method="POST",
+                    endpoint="/resources/compound-search",
+                    status_code=200,
+                    resource_type="search",
+                    request_data={
+                        'query': query,
+                        'limit': limit
+                    },
+                    response_data={
+                        'total_results': results['total'],
+                        'search_strategy': results.get('search_strategy', 'compound')
+                    }
+                )
+                
+                return results
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error in compound search: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
         @app.get("/resources/{uri:path}", response_model=Dict[str, Any])
         async def get_resource(uri: str, user: User = Depends(require_auth)):
             """Get a specific resource by URI (ownership checked)."""

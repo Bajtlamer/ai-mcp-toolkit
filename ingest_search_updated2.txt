@@ -1,0 +1,148 @@
+Got it—let’s align everything to a single-prompt, local-only (Ollama) stack and map it against what you already have.
+
+I’ll break it down into: (A) what’s already equal, (B) what my design adds (still local), and (C) the minimal updates to get “one box, best result” without modes.
+
+⸻
+
+A) What you already have (and keep)
+	•	Ollama embeddings → Atlas Vector Search for semantic retrieval (document-level & chunk-level). Keep this; it’s correct and proven.  
+	•	MongoDB Atlas knn index on resource_chunks.embedding with cosine similarity. ✔️  
+	•	End-to-end pipeline: query → embed → vector search → rank → return, with user scoping. ✔️  
+
+Your current system already does solid semantic search and chunk precision; we won’t rip that out—only enrich it.
+
+⸻
+
+B) What the “single-prompt” design adds (still 100% local with Ollama)
+
+1) One endpoint, one pipeline (no modes)
+
+Instead of Semantic/Keyword/Hybrid modes, use one analyzer to detect signals from the user’s prompt and build one $search.compound:
+	•	money (e.g., “9 USD”) → numeric range filter (cents) + currency
+	•	exact IDs/long numbers → keywords exact phrase filter
+	•	vendor/company cues → vendor/entities match
+	•	file type cues (pdf/csv/image) → file_type filter
+	•	Always include semantic vector (Ollama text embedding) in should to rank.
+
+This gives you one fused ranking—best result at the top—without the user choosing a mode.
+
+2) Schema enrichment for precision
+
+Add structured fields (per chunk/row/region):
+	•	keywords: string[] — store exact tokens/IDs (invoice numbers, long numeric strings, emails)
+	•	currency: string — ISO (USD/EUR/CZK)
+	•	amounts: number[] — integers in cents for numeric range filters
+	•	vendor: string — normalized (lowercase)
+	•	entities: string[] — light NER tags (company, product, etc.)
+	•	file_type, page, row_index, col_index, bbox — for deep links
+	•	Images, Ollama-only path:
+	•	caption (short) produced by a local vision-LLM in Ollama (e.g., llava, moondream, bakllava)
+	•	imageLabels: string[] (tags extracted from caption)
+	•	ocrText from local Tesseract
+	•	captionEmbedding = text embedding (Ollama nomic-embed-text/mxbai-embed-large) of caption + imageLabels + ocrText
+
+This avoids any third-party service and still makes images searchable via text semantics.
+
+3) Atlas Search index additions (non-breaking)
+
+Extend your current index to map the new fields (keep your existing embedding mapping):
+
+{
+  "mappings": {
+    "dynamic": false,
+    "fields": {
+      "text":        { "type": "string" },
+      "keywords":    { "type": "string", "analyzer": "keyword" },
+      "vendor":      { "type": "string", "analyzer": "keyword" },
+      "entities":    { "type": "string" },
+      "currency":    { "type": "string", "analyzer": "keyword" },
+      "amounts":     { "type": "number" },
+      "date":        { "type": "date" },
+      "file_type":   { "type": "string", "analyzer": "keyword" },
+
+      "caption":     { "type": "string" },
+      "imageLabels": { "type": "string" },
+      "ocrText":     { "type": "string" },
+
+      "embedding":        { "type": "knnVector", "dimensions": YOUR_TEXT_DIM, "similarity": "cosine" },
+      "captionEmbedding": { "type": "knnVector", "dimensions": YOUR_TEXT_DIM, "similarity": "cosine" }
+    }
+  }
+}
+
+(Dimensions = your Ollama text embedding model; your current setup uses 768–1536 depending on model.)  
+
+4) Unified $search (examples)
+
+Contract / invoice / CSV (textual):
+	•	must: tenant/company, plus any exact keywords, currency/amounts range, file_type if hinted
+	•	should: knnBeta on embedding with query vector + text match on text/vendor/entities
+
+Image queries (“image including London”) using Ollama-only:
+	•	must: file_type == image
+	•	should: text over caption, imageLabels, ocrText + knnBeta over captionEmbedding (query embedded as text)
+
+This preserves one endpoint, one list, best up top—with strong recall and exactness.
+
+5) Explainability & deep-links
+
+Return Atlas highlights, match_type (e.g., amount-range+semantic, keyword+semantic) and Open links:
+	•	PDFs → /viewer/pdf?file={fileId}&page={page}
+	•	CSVs → /viewer/csv?file={fileId}&row={row_index}
+	•	Images → /viewer/image?file={fileId} (+ optional bbox)
+
+This pairs with your Svelte UI nicely.
+
+⸻
+
+C) What to update/rewrite (minimal deltas from your MD)
+
+Equals (keep as-is)
+	•	Semantic search core, chunk granularity, cosine scoring, Atlas vector index. ✔️  
+
+Do more (new, local-friendly)
+	•	Enrich ingestion to fill keywords, currency, amounts (cents), vendor, entities, and for images: caption, imageLabels, ocrText, captionEmbedding (all producible with Ollama + Tesseract, no cloud).
+	•	Single endpoint that always builds one $search.compound based on prompt analysis (money, IDs, vendor, file hints). No user modes.
+
+Update (small refactors)
+	•	Atlas index: add mappings above (non-breaking; your current vector mapping stays).
+	•	Search controller: replace “mode selection” with signal-driven query builder (money → numeric range; IDs → phrase on keywords; images → caption fields + captionEmbedding).
+
+Remove / avoid
+	•	UI dropdown for Semantic/Keyword/Hybrid/Auto; keep one prompt.
+	•	Separate endpoints for modes; keep one /search.
+
+⸻
+
+Why this satisfies “one prompt, always best result”
+	•	Exact filters (must) ensure ID/amount/date/file-type constraints are never missed.
+	•	Semantic ranking (should knn on text or caption) lifts the most meaningful results.
+	•	Light lexical (text on text/vendor/entities/caption/ocrText) boosts obvious matches.
+	•	All in one ranked list—no sensitivity knobs, no mode switching.
+
+⸻
+
+Mapping to your MD guide
+	•	You already have semantic document & chunk search and Atlas vector indexes. We keep that.  
+	•	Your guide’s planned keyword/hybrid/auto modes become internal signals rather than UI choices; the router auto-composes one $search each time.  
+	•	The pipeline (query → embed → search → rank) stays; we augment ingestion and enrich filters so the single query is robust across PDFs, CSVs, text, and images.  
+
+⸻
+
+Local-only (Ollama) notes
+	•	Text embeddings: nomic-embed-text or mxbai-embed-large in Ollama (same for queries & captions).
+	•	Image captions: llava, moondream, or bakllava in Ollama; prompt them to output concise tags + a one-line caption.
+	•	OCR: tesseract locally.
+	•	No third-party: all compute runs on your box; Atlas only stores and searches vectors.
+
+⸻
+
+If you want, I’ll draft:
+	1.	An Atlas index JSON extending your current one with the fields above.
+	2.	A single /search controller (Node/Python) that:
+	•	parses money/IDs/vendors/file hints
+	•	embeds query via Ollama
+	•	builds the $search.compound
+	•	returns hits with highlights + deep-links.
+
+(Share one sample resource_chunks doc and your exact embedding dimension; I’ll produce copy-paste artifacts.)

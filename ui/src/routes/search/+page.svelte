@@ -4,10 +4,6 @@
     Search,
     Upload,
     FileText,
-    Sparkles,
-    Brain,
-    Target,
-    Zap,
     Filter,
     X,
     Loader,
@@ -16,18 +12,21 @@
     Calendar,
     Hash,
     File,
-    Send
+    Send,
+    ExternalLink,
+    Mail,
+    CreditCard
   } from 'lucide-svelte';
   import toast from 'svelte-french-toast';
+  import { compoundSearch } from '$lib/api/search';
   
   let query = '';
   let results = [];
   let queryAnalysis = null;
-  let searchType = 'auto';
   let loading = false;
   let searchTime = 0;
   let error = null;
-  let limit = 20;
+  let limit = 30;
   
   let showUploadModal = false;
   let uploadFile = null;
@@ -41,15 +40,6 @@
   let snippetSource = 'user_input';
   let savingSnippet = false;
   
-  let debounceTimer;
-  
-  const searchTypes = [
-    { value: 'auto', label: 'Auto', icon: Sparkles },
-    { value: 'semantic', label: 'Semantic', icon: Brain },
-    { value: 'keyword', label: 'Keyword', icon: Target },
-    { value: 'hybrid', label: 'Hybrid', icon: Zap }
-  ];
-  
   async function performSearch() {
     if (!query || query.trim().length < 2) {
       results = [];
@@ -62,27 +52,10 @@
     const startTime = performance.now();
     
     try {
-      const params = new URLSearchParams({
-        q: query,
-        limit: limit.toString(),
-        search_type: searchType
-      });
+      const data = await compoundSearch(query, limit);
       
-      const response = await fetch(
-        `http://localhost:8000/resources/search?${params}`,
-        { credentials: 'include' }
-      );
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Search failed');
-      }
-      
-      const data = await response.json();
       results = data.results || [];
-      queryAnalysis = data.query_analysis || null;
-      // Don't override user's manual search type selection
-      // searchType = data.search_type || 'auto';
+      queryAnalysis = data.analysis || null;
       searchTime = (performance.now() - startTime).toFixed(0);
       
     } catch (err) {
@@ -94,13 +67,31 @@
     }
   }
   
-  // Removed auto-search on typing - search only on Enter or button click
-  
   function handleKeyDown(event) {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       performSearch();
     }
+  }
+  
+  function getMatchTypeBadgeClass(matchType) {
+    const classes = {
+      'exact_amount': 'badge-success',
+      'exact_id': 'badge-primary',
+      'semantic_strong': 'badge-info',
+      'hybrid': 'badge-secondary'
+    };
+    return classes[matchType] || 'badge-secondary';
+  }
+  
+  function getMatchTypeLabel(matchType) {
+    const labels = {
+      'exact_amount': 'Exact Amount',
+      'exact_id': 'Exact ID',
+      'semantic_strong': 'High Relevance',
+      'hybrid': 'Hybrid Match'
+    };
+    return labels[matchType] || matchType;
   }
   
   async function handleUpload() {
@@ -192,10 +183,10 @@
     <div>
       <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-3">
         <Search class="w-8 h-8 text-primary-600" />
-        Contextual Search
+        Intelligent Search
       </h1>
       <p class="text-gray-600 dark:text-gray-400">
-        Smart hybrid search with automatic query understanding
+        Unified search with automatic detection of IDs, amounts, vendors, and semantic meaning
       </p>
     </div>
     
@@ -219,7 +210,7 @@
     <textarea
       bind:value={query}
       on:keydown={handleKeyDown}
-      placeholder="Search by meaning, exact IDs, amounts, vendors... (Press Enter to search)"
+      placeholder="Search documents by meaning, IDs, amounts, vendors, or file types... (Press Enter)"
       class="w-full px-4 py-3 pr-20 border border-gray-300 dark:border-gray-600 rounded-3xl focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 transition-all max-h-40"
       rows="1"
       style="min-height: 52px;"
@@ -247,53 +238,55 @@
     </div>
   </div>
   
-  <!-- Search Type Tabs -->
-  <div class="flex gap-2 flex-wrap mb-4">
-    {#each searchTypes as type}
-      {@const IconComponent = type.icon}
-      <button
-        class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all
-               {searchType === type.value 
-                 ? 'bg-primary-600 text-white' 
-                 : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}"
-        on:click={() => { searchType = type.value; if (query) performSearch(); }}
-      >
-        <IconComponent class="w-4 h-4" />
-        {type.label}
-      </button>
-    {/each}
-  </div>
-  
   <!-- Query Analysis -->
   {#if queryAnalysis}
-    <div class="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+    <div class="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 mb-4">
       <div class="flex items-center gap-2 text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">
         <Filter class="w-4 h-4" />
-        Query Analysis
+        Detected Filters
       </div>
       <div class="flex flex-wrap gap-2">
-        {#if queryAnalysis.has_exact_id}
+        {#if queryAnalysis.ids && queryAnalysis.ids.length > 0}
           <span class="badge badge-success flex items-center gap-1">
             <Hash class="w-3 h-3" />
-            ID: {queryAnalysis.exact_ids?.join(', ')}
+            IDs: {queryAnalysis.ids.join(', ')}
           </span>
         {/if}
-        {#if queryAnalysis.has_money}
-          <span class="badge badge-warning flex items-center gap-1">
-            <DollarSign class="w-3 h-3" />
-            Amounts
+        {#if queryAnalysis.emails && queryAnalysis.emails.length > 0}
+          <span class="badge badge-info flex items-center gap-1">
+            <Mail class="w-3 h-3" />
+            {queryAnalysis.emails.join(', ')}
           </span>
         {/if}
-        {#if queryAnalysis.has_vendor}
+        {#if queryAnalysis.ibans && queryAnalysis.ibans.length > 0}
           <span class="badge badge-primary flex items-center gap-1">
-            <Building class="w-3 h-3" />
-            {queryAnalysis.vendors?.join(', ')}
+            <CreditCard class="w-3 h-3" />
+            {queryAnalysis.ibans.join(', ')}
           </span>
         {/if}
-        {#if queryAnalysis.has_date}
+        {#if queryAnalysis.money && queryAnalysis.money.length > 0}
+          {#each queryAnalysis.money as m}
+            <span class="badge badge-warning flex items-center gap-1">
+              <DollarSign class="w-3 h-3" />
+              {m.currency} {m.amount.toFixed(2)}
+            </span>
+          {/each}
+        {/if}
+        {#if queryAnalysis.entities && queryAnalysis.entities.length > 0}
+          <span class="badge badge-secondary flex items-center gap-1">
+            <Building class="w-3 h-3" />
+            {queryAnalysis.entities.join(', ')}
+          </span>
+        {/if}
+        {#if queryAnalysis.file_types && queryAnalysis.file_types.length > 0}
           <span class="badge badge-error flex items-center gap-1">
-            <Calendar class="w-3 h-3" />
-            Dates
+            <File class="w-3 h-3" />
+            {queryAnalysis.file_types.join(', ').toUpperCase()}
+          </span>
+        {/if}
+        {#if queryAnalysis.clean_text}
+          <span class="text-xs text-blue-700 dark:text-blue-300">
+            Semantic: "{queryAnalysis.clean_text}"
           </span>
         {/if}
       </div>
@@ -312,12 +305,9 @@
 <!-- Results Header -->
 {#if query && !loading && results.length > 0}
   <div class="flex items-center justify-between mb-4">
-    <div class="flex items-center gap-3">
-      <span class="text-lg font-semibold text-gray-900 dark:text-white">
-        {results.length} results
-      </span>
-      <span class="badge badge-primary">{searchType}</span>
-    </div>
+    <span class="text-lg font-semibold text-gray-900 dark:text-white">
+      {results.length} results
+    </span>
     <span class="text-sm text-gray-500 dark:text-gray-400">
       {searchTime}ms
     </span>
@@ -335,20 +325,55 @@
           </div>
           
           <div class="flex-1 min-w-0">
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1 truncate">
-              {result.file_name}
-            </h3>
+            <div class="flex items-start justify-between gap-3 mb-2">
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-white truncate">
+                {result.file_name}
+              </h3>
+              {#if result.open_url}
+                <a
+                  href={result.open_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="btn btn-sm btn-secondary flex items-center gap-1 flex-shrink-0"
+                  title="Open document"
+                >
+                  <ExternalLink class="w-3 h-3" />
+                  Open
+                </a>
+              {/if}
+            </div>
             
-            <p class="text-gray-600 dark:text-gray-400 text-sm mb-3 line-clamp-2">
-              {result.summary || 'No description'}
-            </p>
+            {#if result.text}
+              <p class="text-gray-600 dark:text-gray-400 text-sm mb-3 line-clamp-2">
+                {result.text}
+              </p>
+            {:else if result.summary}
+              <p class="text-gray-600 dark:text-gray-400 text-sm mb-3 line-clamp-2">
+                {result.summary}
+              </p>
+            {/if}
+            
+            <!-- Highlights -->
+            {#if result.highlights && result.highlights.length > 0}
+              <div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-2 mb-3 text-xs">
+                {#each result.highlights.slice(0, 2) as highlight}
+                  <div class="text-gray-700 dark:text-gray-300 mb-1">
+                    ...{highlight.texts.join(' ')}...
+                  </div>
+                {/each}
+              </div>
+            {/if}
             
             <div class="flex flex-wrap gap-2">
               {#if result.match_type}
-                <span class="badge badge-secondary text-xs">{result.match_type}</span>
+                <span class="badge {getMatchTypeBadgeClass(result.match_type)} text-xs">
+                  {getMatchTypeLabel(result.match_type)}
+                </span>
               {/if}
               {#if result.file_type}
-                <span class="badge badge-secondary text-xs">{result.file_type}</span>
+                <span class="badge badge-secondary text-xs uppercase">
+                  {result.file_type}
+                </span>
               {/if}
               {#if result.vendor}
                 <span class="badge badge-primary text-xs flex items-center gap-1">
@@ -356,10 +381,20 @@
                   {result.vendor}
                 </span>
               {/if}
-              {#if result.currency}
+              {#if result.currency && result.amounts_cents && result.amounts_cents.length > 0}
                 <span class="badge badge-warning text-xs flex items-center gap-1">
                   <DollarSign class="w-3 h-3" />
-                  {result.currency}
+                  {result.currency} {(result.amounts_cents[0] / 100).toFixed(2)}
+                </span>
+              {/if}
+              {#if result.page_number}
+                <span class="badge badge-info text-xs">
+                  Page {result.page_number}
+                </span>
+              {/if}
+              {#if result.row_index !== null && result.row_index !== undefined}
+                <span class="badge badge-info text-xs">
+                  Row {result.row_index}
                 </span>
               {/if}
             </div>

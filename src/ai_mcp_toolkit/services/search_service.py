@@ -8,6 +8,7 @@ from bson import ObjectId
 
 from ..models.documents import Resource, ResourceChunk
 from .embedding_service import get_embedding_service
+from .query_analyzer import QueryAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,8 @@ class SearchService:
         """Initialize search service."""
         self.logger = logging.getLogger(__name__)
         self.embedding_service = get_embedding_service()
-        self.logger.info("SearchService initialized")
+        self.query_analyzer = QueryAnalyzer()
+        self.logger.info("SearchService initialized with compound search support")
     
     async def search(
         self,
@@ -476,6 +478,266 @@ class SearchService:
         filtered_results.sort(key=lambda x: x['score'], reverse=True)
         
         return filtered_results[:limit]
+    
+    async def compound_search(
+        self,
+        query: str,
+        owner_id: str,
+        company_id: Optional[str] = None,
+        limit: int = 30
+    ) -> Dict[str, Any]:
+        """
+        Simplified Atlas text search (compound doesn't work with knnBeta).
+        
+        Args:
+            query: Natural language search query
+            owner_id: User ID for ACL filtering
+            company_id: Optional company ID for multi-tenant
+            limit: Maximum results (default: 30)
+            
+        Returns:
+            Search results with analysis
+        """
+        try:
+            self.logger.info(f"Using legacy hybrid search (compound not working)")
+            
+            # Analyze query
+            analysis = self.query_analyzer.analyze(query)
+            
+            # Just use legacy hybrid search - it was working
+            return await self.search(query, company_id or owner_id, limit, search_type="hybrid")
+            
+            self.logger.info(f"Search text: '{search_text}'")
+            
+            # Build OR query for multiple words (better for partial matching)
+            pipeline = [
+                {
+                    "$search": {
+                        "index": "resource_chunks_compound",
+                        "compound": {
+                            "should": [
+                                # Exact phrase in OCR (highest priority)
+                                {
+                                    "phrase": {
+                                        "query": search_text,
+                                        "path": "ocr_text",
+                                        "score": {"boost": {"value": 20}}
+                                    }
+                                },
+                                # Individual words in OCR with fuzzy (for diacritics)
+                                {
+                                    "text": {
+                                        "query": search_text,
+                                        "path": "ocr_text",
+                                        "fuzzy": {"maxEdits": 2},
+                                        "score": {"boost": {"value": 10}}
+                                    }
+                                },
+                                # Fallback to regular text fields
+                                {
+                                    "text": {
+                                        "query": search_text,
+                                        "path": ["text", "content"],
+                                        "fuzzy": {"maxEdits": 1}
+                                    }
+                                }
+                            ],
+                            "minimumShouldMatch": 1
+                        }
+                    }
+                },
+                # Add score as field BEFORE grouping
+                {
+                    "$addFields": {
+                        "search_score": {"$meta": "searchScore"}
+                    }
+                },
+                # ACL filter AFTER search (post-filter)
+                {"$match": {"owner_id": owner_id}},
+                # Sort by score first
+                {"$sort": {"search_score": -1}},
+                # Group by parent_id to avoid duplicates (keep highest scoring chunk per resource)
+                {
+                    "$group": {
+                        "_id": "$parent_id",
+                        "file_name": {"$first": "$file_name"},
+                        "file_type": {"$first": "$file_type"},
+                        "text": {"$first": "$text"},
+                        "ocr_text": {"$first": "$ocr_text"},
+                        "caption": {"$first": "$caption"},
+                        "vendor": {"$first": "$vendor"},
+                        "currency": {"$first": "$currency"},
+                        "amounts_cents": {"$first": "$amounts_cents"},
+                        "page_number": {"$first": "$page_number"},
+                        "row_index": {"$first": "$row_index"},
+                        "score": {"$first": "$search_score"}
+                    }
+                },
+                # Sort grouped results by score
+                {"$sort": {"score": -1}},
+                {"$limit": limit},
+                {
+                    "$project": {
+                        "parent_id": 1,
+                        "file_name": 1,
+                        "file_type": 1,
+                        "text": 1,
+                        "ocr_text": 1,
+                        "caption": 1,
+                        "vendor": 1,
+                        "currency": 1,
+                        "amounts_cents": 1,
+                        "page_number": 1,
+                        "row_index": 1,
+                        "score": {"$meta": "searchScore"},
+                        "highlights": {"$meta": "searchHighlights"}
+                    }
+                }
+            ]
+            
+            # Execute search
+            chunks_collection = ResourceChunk.get_pymongo_collection()
+            cursor = chunks_collection.aggregate(pipeline)
+            results_raw = await cursor.to_list(length=limit)
+            
+            # Format results (grouped by parent_id now)
+            results = []
+            for r in results_raw:
+                results.append({
+                    'id': str(r.get('_id')),  # _id is now parent_id from grouping
+                    'file_name': r.get('file_name'),
+                    'file_type': r.get('file_type'),
+                    'text': r.get('text', '')[:200] if r.get('text') else '',
+                    'ocr_text': r.get('ocr_text'),
+                    'caption': r.get('caption'),
+                    'vendor': r.get('vendor'),
+                    'currency': r.get('currency'),
+                    'amounts_cents': r.get('amounts_cents'),
+                    'page_number': r.get('page_number'),
+                    'row_index': r.get('row_index'),
+                    'score': r.get('score', 0) / 10,  # Normalize score
+                    'highlights': [],
+                    'match_type': 'text_search',
+                    'open_url': self._build_deep_link({'id': str(r.get('_id')), 'page_number': r.get('page_number'), 'row_index': r.get('row_index')})
+                })
+            
+            self.logger.info(f"Found {len(results)} results")
+            
+            return {
+                'query': query,
+                'analysis': analysis,
+                'results': results,
+                'total': len(results),
+                'search_strategy': 'simple_text',
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Search error: {e}", exc_info=True)
+            # Fallback to legacy
+            return await self.search(query, company_id or owner_id, limit, search_type="hybrid")
+    
+    async def _execute_atlas_compound_search(
+        self,
+        must_clauses: List[Dict],
+        should_clauses: List[Dict],
+        limit: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Execute MongoDB Atlas $search.compound aggregation.
+        
+        Args:
+            must_clauses: Required filters
+            should_clauses: Optional ranking factors
+            limit: Max results
+            
+        Returns:
+            List of search results
+        """
+        # Build aggregation pipeline
+        pipeline = [
+            {
+                "$search": {
+                    "index": "resource_chunks_compound",
+                    "compound": {
+                        "must": must_clauses,
+                        "should": should_clauses,
+                        "minimumShouldMatch": 1 if should_clauses else 0
+                    }
+                }
+            },
+            {"$limit": limit},
+            {
+                "$project": {
+                    "parent_id": 1,
+                    "resource_uri": 1,
+                    "file_name": 1,
+                    "file_type": 1,
+                    "text": 1,
+                    "content": 1,
+                    "page_number": 1,
+                    "row_index": 1,
+                    "bbox": 1,
+                    "vendor": 1,
+                    "currency": 1,
+                    "amounts_cents": 1,
+                    "keywords": 1,
+                    "entities": 1,
+                    "caption": 1,
+                    "image_labels": 1,
+                    "ocr_text": 1,
+                    "score": {"$meta": "searchScore"},
+                    "highlights": {"$meta": "searchHighlights"}
+                }
+            }
+        ]
+        
+        # Execute aggregation on ResourceChunk collection
+        chunks_collection = ResourceChunk.get_pymongo_collection()
+        cursor = chunks_collection.aggregate(pipeline)
+        results = await cursor.to_list(length=limit)
+        
+        # Format results
+        formatted_results = []
+        for result in results:
+            formatted_results.append({
+                'id': str(result.get('parent_id')),
+                'file_name': result.get('file_name'),
+                'file_type': result.get('file_type'),
+                'chunk_text': result.get('text') or result.get('content', '')[:200],
+                'page_number': result.get('page_number'),
+                'row_index': result.get('row_index'),
+                'vendor': result.get('vendor'),
+                'currency': result.get('currency'),
+                'amounts_cents': result.get('amounts_cents'),
+                'score': result.get('score', 0),
+                'highlights': result.get('highlights', []),
+                'caption': result.get('caption'),
+                'ocr_text': result.get('ocr_text'),
+            })
+        
+        return formatted_results
+    
+    def _determine_match_type(self, result: Dict, analysis: Dict) -> str:
+        """Determine why this result matched (for explainability)."""
+        if analysis['money'] and result.get('currency'):
+            return 'exact_amount'
+        elif analysis['ids'] and any(id in result.get('keywords', []) for id in analysis['ids']):
+            return 'exact_id'
+        elif result['score'] > 0.8:
+            return 'semantic_strong'
+        else:
+            return 'hybrid'
+    
+    def _build_deep_link(self, result: Dict) -> str:
+        """Generate open URL for PDF page, CSV row, or image region."""
+        resource_id = result['id']
+        
+        if result.get('page_number'):
+            return f"/resources/{resource_id}?page={result['page_number']}"
+        elif result.get('row_index'):
+            return f"/resources/{resource_id}?row={result['row_index']}"
+        else:
+            return f"/resources/{resource_id}"
     
     def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
         """Calculate cosine similarity between two vectors."""
