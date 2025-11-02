@@ -1465,6 +1465,187 @@ class HTTPServer:
                 # Return empty list on error (non-critical feature)
                 return []
         
+        # ========== Search Category Management Endpoints ==========
+        
+        @app.get("/search/categories")
+        async def list_search_categories(user: User = Depends(require_auth)):
+            """
+            List all search categories for the current user.
+            
+            Returns all configured categories (vendors, people, prices, etc.)
+            with their entities, ignored words, and settings.
+            """
+            try:
+                from ..models.search_config import SearchConfigService
+                
+                categories = await SearchConfigService.get_or_create_defaults(str(user.id))
+                
+                # Convert to dict and exclude category objects
+                result = {}
+                for cat_type, category in categories.items():
+                    result[cat_type] = {
+                        'category_type': category.category_type,
+                        'entities': category.entities,
+                        'ignored_words': category.ignored_words,
+                        'trigger_keywords': category.trigger_keywords,
+                        'max_non_category_words': category.max_non_category_words,
+                        'match_score': category.match_score,
+                        'enabled': category.enabled,
+                        'created_at': category.created_at.isoformat(),
+                        'updated_at': category.updated_at.isoformat()
+                    }
+                
+                return result
+                
+            except Exception as e:
+                self.logger.error(f"Error listing categories: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.get("/search/categories/{category_type}")
+        async def get_search_category(
+            category_type: str,
+            user: User = Depends(require_auth)
+        ):
+            """
+            Get details of a specific search category.
+            """
+            try:
+                from ..models.search_config import SearchConfigService
+                
+                categories = await SearchConfigService.get_or_create_defaults(str(user.id))
+                
+                if category_type not in categories:
+                    raise HTTPException(status_code=404, detail=f"Category '{category_type}' not found")
+                
+                category = categories[category_type]
+                return {
+                    'category_type': category.category_type,
+                    'entities': category.entities,
+                    'ignored_words': category.ignored_words,
+                    'trigger_keywords': category.trigger_keywords,
+                    'max_non_category_words': category.max_non_category_words,
+                    'match_score': category.match_score,
+                    'enabled': category.enabled,
+                    'created_at': category.created_at.isoformat(),
+                    'updated_at': category.updated_at.isoformat()
+                }
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error getting category {category_type}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.post("/search/categories/{category_type}/entities")
+        async def add_category_entity(
+            category_type: str,
+            request: Dict[str, str],
+            user: User = Depends(require_auth)
+        ):
+            """
+            Add an entity to a category.
+            
+            Examples:
+            - POST /search/categories/vendor/entities {"entity": "netflix"}
+            - POST /search/categories/people/entities {"entity": "john.doe@company.com"}
+            """
+            try:
+                from ..models.search_config import SearchConfigService
+                
+                entity = request.get("entity")
+                if not entity:
+                    raise HTTPException(status_code=400, detail="Entity is required")
+                
+                category = await SearchConfigService.add_entity(
+                    company_id=str(user.id),
+                    category_type=category_type,
+                    entity=entity
+                )
+                
+                self.logger.info(f"User {user.username} added entity '{entity}' to category '{category_type}'")
+                
+                return {
+                    'message': f"Entity '{entity}' added to category '{category_type}'",
+                    'entities': category.entities
+                }
+                
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Error adding entity: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.delete("/search/categories/{category_type}/entities/{entity}")
+        async def remove_category_entity(
+            category_type: str,
+            entity: str,
+            user: User = Depends(require_auth)
+        ):
+            """
+            Remove an entity from a category.
+            
+            Example:
+            - DELETE /search/categories/vendor/entities/netflix
+            """
+            try:
+                from ..models.search_config import SearchConfigService
+                
+                category = await SearchConfigService.remove_entity(
+                    company_id=str(user.id),
+                    category_type=category_type,
+                    entity=entity
+                )
+                
+                self.logger.info(f"User {user.username} removed entity '{entity}' from category '{category_type}'")
+                
+                return {
+                    'message': f"Entity '{entity}' removed from category '{category_type}'",
+                    'entities': category.entities
+                }
+                
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Error removing entity: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.put("/search/categories/{category_type}/ignored-words")
+        async def update_ignored_words(
+            category_type: str,
+            request: Dict[str, list],
+            user: User = Depends(require_auth)
+        ):
+            """
+            Update ignored words for a category.
+            
+            Example:
+            - PUT /search/categories/vendor/ignored-words
+              {"ignored_words": ["invoice", "bill", "payment", "contract"]}
+            """
+            try:
+                from ..models.search_config import SearchConfigService
+                
+                ignored_words = request.get("ignored_words", [])
+                
+                category = await SearchConfigService.update_ignored_words(
+                    company_id=str(user.id),
+                    category_type=category_type,
+                    ignored_words=ignored_words
+                )
+                
+                self.logger.info(f"User {user.username} updated ignored words for category '{category_type}'")
+                
+                return {
+                    'message': f"Ignored words updated for category '{category_type}'",
+                    'ignored_words': category.ignored_words
+                }
+                
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Error updating ignored words: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
         @app.get("/resources/{uri:path}", response_model=Dict[str, Any])
         async def get_resource(uri: str, user: User = Depends(require_auth)):
             """Get a specific resource by URI (ownership checked)."""

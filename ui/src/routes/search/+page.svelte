@@ -160,7 +160,10 @@
       'partial_words': 'badge-secondary',
       'semantic_strong': 'badge-info',
       'semantic_chunk': 'badge-info',
+      'vendor_match': 'badge-warning',
       'vendor_filter': 'badge-warning',
+      'people_match': 'badge-error',
+      'price_match': 'badge-success',
       'hybrid': 'badge-secondary'
     };
     return classes[matchType] || 'badge-secondary';
@@ -176,7 +179,10 @@
       'partial_words': 'Partial Match',
       'semantic_strong': 'High Relevance',
       'semantic_chunk': 'Semantic',
+      'vendor_match': '🏭 Vendor Match',
       'vendor_filter': 'Vendor Match',
+      'people_match': '👤 People Match',
+      'price_match': '💰 Price Match',
       'hybrid': 'Hybrid Match'
     };
     return labels[matchType] || matchType;

@@ -31,7 +31,8 @@ class SearchService:
         self.logger = logging.getLogger(__name__)
         self.embedding_service = get_embedding_service()
         self.query_analyzer = QueryAnalyzer()
-        self.logger.info("✅ SearchService initialized with diacritic-insensitive search support")
+        self.config_service = SearchConfigService()
+        self.logger.info("✅ SearchService initialized with dynamic category search support")
     
     async def search(
         self,
@@ -56,7 +57,7 @@ class SearchService:
             self.logger.info(f"Search query: '{query}' (company: {company_id}, type: {search_type})")
             
             # Classify query and extract entities
-            query_analysis = self._analyze_query(query)
+            query_analysis = await self._analyze_query(query, company_id)
             
             # Determine search strategy
             if search_type == "auto":
@@ -89,12 +90,75 @@ class SearchService:
                 'total': 0,
             }
     
-    def _analyze_query(self, query: str) -> Dict[str, Any]:
+    async def _detect_categories(
+        self,
+        query: str,
+        company_id: str
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Detect which categories match the query using dynamic configuration.
+        
+        Args:
+            query: Search query
+            company_id: Company ID
+            
+        Returns:
+            Dict mapping category_type to match info
+        """
+        categories = await self.config_service.get_or_create_defaults(company_id)
+        query_lower = query.lower()
+        query_normalized = normalize_query(query)
+        query_words = set(query_normalized.split())
+        
+        detected = {}
+        
+        for category_type, category in categories.items():
+            if not category.enabled:
+                continue
+            
+            # Check if any entity from this category is in the query
+            matched_entities = []
+            for entity in category.entities:
+                if entity in query_lower:
+                    matched_entities.append(entity)
+            
+            # Check if any trigger keyword is in the query
+            has_trigger = any(kw in query_lower for kw in category.trigger_keywords)
+            
+            if matched_entities or has_trigger:
+                # Calculate non-category words
+                category_entity_words = set()
+                for entity in matched_entities:
+                    category_entity_words.update(entity.split())
+                
+                ignored_set = set(category.ignored_words)
+                trigger_set = set(category.trigger_keywords)
+                
+                non_category_words = query_words - category_entity_words - ignored_set - trigger_set
+                
+                # Check if query is primarily about this category
+                if len(non_category_words) <= category.max_non_category_words:
+                    detected[category_type] = {
+                        'matched_entities': matched_entities,
+                        'has_trigger': has_trigger,
+                        'non_category_word_count': len(non_category_words),
+                        'score': category.match_score,
+                        'category': category
+                    }
+                    self.logger.info(
+                        f"🎯 Category '{category_type}' detected: entities={matched_entities}, "
+                        f"non_cat_words={len(non_category_words)}, trigger={has_trigger}"
+                    )
+        
+        return detected
+    
+    async def _analyze_query(self, query: str, company_id: str) -> Dict[str, Any]:
         """
         Analyze query to extract entities and determine search strategy.
         
         Args:
             query: User query string
+            company_id: Company ID for category detection
             
         Returns:
             Query analysis with extracted entities and recommended strategy
@@ -139,9 +203,14 @@ class SearchService:
             analysis['has_date'] = True
             analysis['dates'] = date_matches
         
-        # This will be replaced with dynamic category detection
-        # Vendors will be detected using SearchCategory configuration
-        analysis['categories'] = {}  # Will store detected categories
+        # Detect categories dynamically (vendors, people, prices, etc.)
+        categories = await self._detect_categories(query, company_id)
+        analysis['categories'] = categories
+        
+        # Update has_vendor for backward compatibility
+        if 'vendor' in categories:
+            analysis['has_vendor'] = True
+            analysis['vendors'] = categories['vendor']['matched_entities']
         
         # Determine recommended search type
         # Simple heuristic: use keyword for exact/simple queries, semantic for natural language
@@ -152,7 +221,7 @@ class SearchService:
         elif len(query_words) <= 2 and not analysis['has_money'] and not analysis['has_date']:
             # Simple 1-2 word queries -> keyword search for exact matches
             analysis['recommended_type'] = 'keyword'
-        elif analysis['has_money'] or analysis['has_date'] or analysis['has_vendor']:
+        elif analysis['has_money'] or analysis['has_date'] or analysis['has_vendor'] or categories:
             analysis['recommended_type'] = 'hybrid'
         else:
             # Complex natural language queries -> semantic search
@@ -443,38 +512,80 @@ class SearchService:
                         'created_at': resource.created_at.isoformat(),
                     })
         
-        # Search by vendor
-        # Only use vendor matching if vendor is the main search term (not just incidental)
-        # e.g. "google" or "google invoices" YES, but "google tag manager" NO
-        if query_analysis['vendors']:
-            # Check if query is primarily about the vendor (not a specific product/service)
-            query_words = set(query_normalized.split())
-            vendor_words = set(v.lower() for v in query_analysis['vendors'])
-            non_vendor_words = query_words - vendor_words - {'invoice', 'invoices', 'bill', 'bills', 'payment', 'payments'}
-            
-            # Only apply vendor filter if there is 1 or fewer non-vendor, non-invoice words
-            # This allows "google", "google invoice", "google czech" but blocks "google tag manager"
-            if len(non_vendor_words) <= 1:
-                for vendor in query_analysis['vendors']:
-                    resources = await Resource.find(
-                        Resource.company_id == company_id,
-                        Resource.vendor == vendor
-                    ).to_list(limit)
-                    
-                    for resource in resources:
-                        # Boost vendor matches with score 0.88
-                        # This ensures vendor matches rank high but don't override exact/keyword matches
-                        results.append({
-                            'id': str(resource.id),
-                            'file_name': resource.file_name,
-                            'file_type': resource.file_type,
-                            'summary': resource.summary,
-                            'vendor': resource.vendor,
-                            'score': 0.88,
-                            'match_type': 'vendor_filter',  # Changed to differentiate from semantic matches
-                            'matched_value': vendor,
-                            'created_at': resource.created_at.isoformat(),
-                        })
+        # Search by categories (vendors, people, prices, etc.)
+        if query_analysis.get('categories'):
+            for category_type, category_info in query_analysis['categories'].items():
+                category = category_info['category']
+                self.logger.info(f"🎯 Processing category: {category_type}, entities: {category_info['matched_entities']}")
+                
+                # Vendor category: match by vendor field
+                if category_type == 'vendor' and category_info['matched_entities']:
+                    for entity in category_info['matched_entities']:
+                        resources = await Resource.find(
+                            Resource.company_id == company_id,
+                            Resource.vendor == entity
+                        ).to_list(limit)
+                        
+                        for resource in resources:
+                            results.append({
+                                'id': str(resource.id),
+                                'file_name': resource.file_name,
+                                'file_type': resource.file_type,
+                                'summary': resource.summary,
+                                'vendor': resource.vendor,
+                                'score': category.match_score,
+                                'match_type': 'vendor_match',
+                                'matched_value': entity,
+                                'created_at': resource.created_at.isoformat(),
+                            })
+                
+                # People category: match by author/email fields
+                elif category_type == 'people' and category_info['matched_entities']:
+                    for entity in category_info['matched_entities']:
+                        # Search in entities field (might contain names/emails)
+                        resources = await Resource.find(
+                            Resource.company_id == company_id,
+                            Resource.entities == entity
+                        ).to_list(limit)
+                        
+                        for resource in resources:
+                            results.append({
+                                'id': str(resource.id),
+                                'file_name': resource.file_name,
+                                'file_type': resource.file_type,
+                                'summary': resource.summary,
+                                'vendor': resource.vendor,
+                                'score': category.match_score,
+                                'match_type': 'people_match',
+                                'matched_value': entity,
+                                'created_at': resource.created_at.isoformat(),
+                            })
+                
+                # Price category: boost documents with amounts
+                elif category_type == 'price':
+                    if query_analysis['money_amounts']:
+                        # Has specific amount - already handled by exact amount search above
+                        pass
+                    else:
+                        # Just keyword "price"/"cost" - boost docs with any amounts
+                        resources = await Resource.find(
+                            Resource.company_id == company_id
+                        ).to_list(limit * 2)
+                        
+                        for resource in resources:
+                            if hasattr(resource, 'amounts_cents') and resource.amounts_cents:
+                                results.append({
+                                    'id': str(resource.id),
+                                    'file_name': resource.file_name,
+                                    'file_type': resource.file_type,
+                                    'summary': resource.summary,
+                                    'vendor': resource.vendor,
+                                    'score': category.match_score,
+                                    'match_type': 'price_match',
+                                    'amounts_cents': resource.amounts_cents,
+                                    'currency': getattr(resource, 'currency', 'USD'),
+                                    'created_at': resource.created_at.isoformat(),
+                                })
         
         # Deduplicate and limit
         # Keep the result with highest score for each document
@@ -487,17 +598,22 @@ class SearchService:
             else:
                 existing = results_map[doc_id]
                 # Prefer higher score, but if scores are close (within 0.05),
-                # prefer content matches over vendor_filter matches
+                # prefer content matches over category matches
+                category_match_types = {'vendor_match', 'people_match', 'price_match', 'vendor_filter'}
                 score_diff = result['score'] - existing['score']
                 if score_diff > 0.05:
                     # New result has significantly higher score, use it
                     results_map[doc_id] = result
                 elif score_diff > -0.05:
-                    # Scores are close, prefer content match over vendor_filter
-                    if existing['match_type'] == 'vendor_filter' and result['match_type'] != 'vendor_filter':
+                    # Scores are close, prefer content match over category match
+                    existing_is_category = existing['match_type'] in category_match_types
+                    result_is_category = result['match_type'] in category_match_types
+                    
+                    if existing_is_category and not result_is_category:
+                        # Existing is category, new is content - use new
                         results_map[doc_id] = result
-                    elif result['match_type'] == 'vendor_filter' and existing['match_type'] != 'vendor_filter':
-                        # Keep existing (content match)
+                    elif not existing_is_category and result_is_category:
+                        # Existing is content, new is category - keep existing
                         pass
                     elif result['score'] > existing['score']:
                         # Both same type, take higher score

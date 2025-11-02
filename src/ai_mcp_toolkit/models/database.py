@@ -79,6 +79,7 @@ class DatabaseManager:
             Prompt, Message, Conversation, 
             AgentState, Workflow
         )
+        from .search_config import SearchCategory
         
         # List of all document models
         document_models = [
@@ -87,6 +88,7 @@ class DatabaseManager:
             AuditLog,
             Resource,
             ResourceChunk,  # NEW: For contextual search chunks
+            SearchCategory,  # NEW: For dynamic search configuration
             Prompt,
             Message,
             Conversation,
