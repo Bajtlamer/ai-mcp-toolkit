@@ -956,6 +956,39 @@ This document outlines the comprehensive task list for enhancing the AI MCP Tool
 
 **Next Sprint**: Phase 1.2 Prompt Template System 🟡 **HIGH PRIORITY**
 
+## Recent Work
+
+### 2025-01-02: Phase 0 Dynamic Category Search ✅ COMPLETE
+- ✅ Created SearchCategory model for dynamic vendor/people/price categories
+- ✅ Replaced hardcoded vendor patterns with database-driven configuration
+- ✅ Added category-based matching (vendor_match, people_match, price_match)
+- ✅ Implemented SearchConfigService with CRUD operations
+- ✅ Added 5 new API endpoints for category management
+- ✅ Updated frontend badges for new match types (🏭 Vendor, 👤 People, 💰 Price)
+- ✅ Fixed missing badge-info CSS class
+- 📄 See: `docs/DYNAMIC_CATEGORY_SEARCH_COMPLETE.md` for details
+
+### 2025-01-02: Phase 0 Search UX Improvements ✅ COMPLETE
+- ✅ Fixed "no results found" appearing during typing (now only after Enter)
+- ✅ Results automatically clear when search input is emptied
+- ✅ Added `searchPerformed` flag for proper UX flow
+- ✅ Better suggestion → search → results flow
+
+### 2025-01-02: Phase 0 Auto-Reindexing System 🚧 80% COMPLETE
+- ✅ Created ReindexingService for background keyword/embedding/suggestion updates
+- ✅ Created ResourceEventService for event coordination
+- ✅ Added background reindexing trigger to upload endpoint
+- ✅ Extended SuggestionService with `index_resource()` method
+- ✅ Configurable via environment (REINDEX_KEYWORDS, REINDEX_EMBEDDINGS, REINDEX_SUGGESTIONS)
+- ⏳ TODO: Add snippet endpoint trigger
+- ⏳ TODO: Hook into resource update endpoint
+- ⏳ TODO: Add resource delete handler
+- 📄 See: `docs/SEARCH_UX_REINDEXING_COMPLETE.md` for details
+
+### Remaining Issues Identified:
+1. **File type not defaulting** - Need to set default file type when adding resources
+2. **Description being overwritten** - System metadata overwrites user description
+
 ## Notes
 
 - Update this file as tasks are completed

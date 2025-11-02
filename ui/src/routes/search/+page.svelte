@@ -27,6 +27,7 @@
   let searchTime = 0;
   let error = null;
   let limit = 30;
+  let searchPerformed = false;  // Track if user actually performed a search
   
   // Suggestions state
   let suggestions = [];
@@ -51,9 +52,11 @@
     if (!query || query.trim().length < 2) {
       results = [];
       queryAnalysis = null;
+      searchPerformed = false;
       return;
     }
     
+    searchPerformed = true;  // Mark that search was performed
     loading = true;
     error = null;
     const startTime = performance.now();
@@ -103,6 +106,16 @@
   }
   
   function handleInput() {
+    // Clear results if query is empty
+    if (!query || query.trim().length === 0) {
+      results = [];
+      queryAnalysis = null;
+      searchPerformed = false;
+      showSuggestions = false;
+      suggestions = [];
+      return;
+    }
+    
     // Debounce suggestions
     if (suggestionTimeout) {
       clearTimeout(suggestionTimeout);
@@ -537,6 +550,16 @@
               {(result.score * 100).toFixed(0)}%
             </div>
             <div class="text-xs text-gray-500 dark:text-gray-400">relevance</div>
+            {#if result.occurrences}
+              <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {result.occurrences}× occurrence{result.occurrences !== 1 ? 's' : ''}
+              </div>
+            {/if}
+            {#if result.matching_chunks && result.matching_chunks > 1}
+              <div class="text-xs text-gray-500 dark:text-gray-400">
+                in {result.matching_chunks} chunk{result.matching_chunks !== 1 ? 's' : ''}
+              </div>
+            {/if}
           </div>
         </div>
       </div>
@@ -545,7 +568,7 @@
 {/if}
 
 <!-- No Results -->
-{#if query && !loading && results.length === 0 && !error}
+{#if searchPerformed && !loading && results.length === 0 && !error}
   <div class="card p-12 text-center">
     <Search class="w-16 h-16 mx-auto text-gray-400 mb-4" />
     <h3 class="text-xl font-semibold text-gray-900 dark:text-white mb-2">

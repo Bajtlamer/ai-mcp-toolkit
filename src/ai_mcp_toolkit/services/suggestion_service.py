@@ -293,3 +293,111 @@ class SuggestionService:
             
         except Exception as e:
             self.logger.error(f"Error clearing suggestions: {e}", exc_info=True)
+    
+    async def index_resource(self, resource):
+        """
+        Index a single resource for suggestions.
+        
+        Adds:
+        - File name
+        - Vendor (if exists)
+        - Entities (names, places, etc.)
+        - Keywords
+        - Common content terms
+        
+        Args:
+            resource: Resource document to index
+        """
+        redis = await get_redis_client()
+        if not redis:
+            return
+        
+        try:
+            from ..models.documents import Resource
+            
+            company_id = getattr(resource, 'company_id', None) or getattr(resource, 'owner_id', None)
+            if not company_id:
+                self.logger.warning(f"Resource {resource.id} has no company_id, skipping suggestion indexing")
+                return
+            
+            prefix = f"{company_id}:"
+            
+            # Index file name
+            if resource.file_name:
+                file_name_norm = normalize_text(resource.file_name)
+                await redis.zadd(
+                    f"{prefix}{self.KEY_FILENAMES}",
+                    {file_name_norm: 0}
+                )
+            
+            # Index vendor
+            if getattr(resource, 'vendor', None):
+                vendor_norm = normalize_text(resource.vendor)
+                await redis.zadd(
+                    f"{prefix}{self.KEY_VENDORS}",
+                    {vendor_norm: 0}
+                )
+            
+            # Index entities
+            if getattr(resource, 'entities', None):
+                for entity in resource.entities[:20]:  # Limit to first 20
+                    entity_norm = normalize_text(entity)
+                    await redis.zadd(
+                        f"{prefix}{self.KEY_ENTITIES}",
+                        {entity_norm: 0}
+                    )
+            
+            # Index keywords
+            if getattr(resource, 'keywords', None):
+                for keyword in resource.keywords[:30]:  # Limit to first 30
+                    keyword_norm = normalize_text(keyword)
+                    await redis.zadd(
+                        f"{prefix}{self.KEY_KEYWORDS}",
+                        {keyword_norm: 0}
+                    )
+            
+            # Extract and index common terms from summary/content
+            text = getattr(resource, 'summary', '') or ''
+            if text:
+                terms = self._extract_common_terms(text, max_terms=50)
+                for term in terms:
+                    term_norm = normalize_text(term)
+                    await redis.zadd(
+                        f"{prefix}{self.KEY_ALL_TERMS}",
+                        {term_norm: 0}
+                    )
+            
+            # Also index 2-3 word phrases from summary
+            if text:
+                phrases = self._extract_phrases(text, max_phrases=20)
+                for phrase in phrases:
+                    phrase_norm = normalize_text(phrase)
+                    await redis.zadd(
+                        f"{prefix}{self.KEY_ALL_TERMS}",
+                        {phrase_norm: 0}
+                    )
+            
+            self.logger.debug(f"Indexed suggestions for resource: {resource.file_name}")
+            
+        except Exception as e:
+            self.logger.error(f"Error indexing resource: {e}", exc_info=True)
+    
+    async def remove_resource_suggestions(
+        self,
+        resource_id: str,
+        company_id: str
+    ):
+        """
+        Remove suggestions for a specific resource.
+        
+        Note: Currently, we don't track which suggestions came from which resource,
+        so this is a no-op. In the future, could track resource_id with suggestions.
+        
+        Args:
+            resource_id: Resource ID
+            company_id: Company ID
+        """
+        # TODO: Implement resource-specific suggestion tracking
+        # For now, suggestions accumulate and get naturally updated when resource is reindexed
+        self.logger.debug(f"Remove resource suggestions called for {resource_id} (not implemented yet)")
+        pass

@@ -382,40 +382,181 @@ class SearchService:
                 f"searchable_text_preview={st_preview}"
             )
         
+        import re
+        
+        # Helper function to count exact phrase occurrences
+        def count_phrase_occurrences(text: str, query: str) -> int:
+            """Count how many times the query appears as exact phrase in text."""
+            if not text or not query:
+                return 0
+            if ' ' not in query:
+                # Single word - count whole word matches
+                pattern = r'\b' + re.escape(query) + r'\b'
+                return len(re.findall(pattern, text, re.IGNORECASE))
+            else:
+                # Multi-word phrase
+                return text.lower().count(query.lower())
+        
+        # Helper to calculate TF-IDF-like score
+        def calculate_match_score(text: str, query: str, base_score: float, is_multi_word: bool) -> tuple[float, int]:
+            """
+            Calculate relevance score based on:
+            - Match frequency (how many times it appears)
+            - Document length (term density)
+            - Base importance (which field)
+            
+            Returns: (score, match_count)
+            """
+            if not text or not query:
+                return 0.0, 0
+            
+            match_count = count_phrase_occurrences(text, query)
+            if match_count == 0:
+                return 0.0, 0
+            
+            # Calculate term density (occurrences per 100 words)
+            word_count = len(text.split())
+            if word_count == 0:
+                return 0.0, 0
+            
+            term_density = (match_count / word_count) * 100
+            
+            import math
+            
+            # Frequency component (logarithmic - more occurrences = higher, but diminishing returns)
+            # 1 = 0.30, 2 = 0.42, 3 = 0.50, 4 = 0.56, 5 = 0.61, 10 = 0.74, 20 = 0.87, 50+ = 1.00
+            frequency_component = min(1.0, 0.20 + (0.30 * math.log10(match_count + 1)))
+            
+            # Density multiplier (modest adjustment based on concentration)
+            # Very low density (<0.2%) = 0.85x (slight penalty)
+            # Low density (0.2-1%) = 0.90-1.00x (neutral)
+            # Medium density (1-3%) = 1.00-1.15x (small boost)
+            # High density (>3%) = 1.15-1.25x (moderate boost, capped)
+            if term_density < 0.2:
+                density_multiplier = 0.85
+            elif term_density < 0.5:
+                density_multiplier = 0.85 + ((term_density - 0.2) * 0.17)  # 0.85-0.90
+            elif term_density < 1.0:
+                density_multiplier = 0.90 + ((term_density - 0.5) * 0.20)  # 0.90-1.00
+            elif term_density < 2.0:
+                density_multiplier = 1.00 + ((term_density - 1.0) * 0.08)  # 1.00-1.08
+            elif term_density < 3.0:
+                density_multiplier = 1.08 + ((term_density - 2.0) * 0.07)  # 1.08-1.15
+            elif term_density < 5.0:
+                density_multiplier = 1.15 + ((term_density - 3.0) * 0.05)  # 1.15-1.25
+            else:
+                density_multiplier = 1.25  # Cap at 1.25x
+            
+            # Apply density as a multiplier to frequency (more balanced approach)
+            base_relevance = min(1.0, frequency_component * density_multiplier)
+            
+            # Phrase coverage bonus: if the search phrase itself is a large portion of the document
+            # This is important for short documents where the phrase might be 20-50% of content
+            if is_multi_word:
+                phrase_word_count = len(query.split())
+                phrase_coverage = (phrase_word_count * match_count / word_count) * 100
+                
+                # If phrase represents >15% of document, give significant boost
+                # 15-25% = +0.10, 25-35% = +0.15, 35-50% = +0.20, >50% = +0.25
+                if phrase_coverage >= 15:
+                    if phrase_coverage < 25:
+                        coverage_bonus = 0.10
+                    elif phrase_coverage < 35:
+                        coverage_bonus = 0.15
+                    elif phrase_coverage < 50:
+                        coverage_bonus = 0.20
+                    else:
+                        coverage_bonus = 0.25
+                    
+                    base_relevance = min(1.0, base_relevance + coverage_bonus)
+            
+            # Multi-word phrase bonus (longer phrases = more specific = higher score)
+            if is_multi_word:
+                query_word_count = len(query.split())
+                # 2-3 words = 1.20x, 4-5 words = 1.35x, 6-8 words = 1.50x, 9+ words = 1.70x
+                if query_word_count <= 3:
+                    phrase_multiplier = 1.20
+                elif query_word_count <= 5:
+                    phrase_multiplier = 1.35
+                elif query_word_count <= 8:
+                    phrase_multiplier = 1.50
+                else:
+                    phrase_multiplier = 1.70
+                
+                base_relevance = min(1.0, base_relevance * phrase_multiplier)
+            
+            # Apply field weight (multiply by base_score which represents field importance)
+            # searchable_text (0.60) vs other fields
+            final_score = base_relevance * (base_score / 0.60)  # Normalize to make 0.60 = 1.0
+            final_score = min(1.0, final_score)
+            
+            return final_score, match_count
+        
         for chunk in chunks:
             score = 0.0
             match_type = None
             matched_field = None
+            total_match_count = 0
             
-            # ✨ Priority 1: Exact phrase match in searchable_text (HIGHEST SCORE)
-            if chunk.searchable_text and query_normalized in chunk.searchable_text:
-                score = 1.0  # Perfect exact phrase match
+            # Check multiple fields with TF-IDF-like scoring
+            is_multi_word = ' ' in query_normalized
+            best_field_score = 0.0
+            best_field_name = None
+            best_match_count = 0
+            
+            # Define fields with their base importance scores
+            fields_to_check = [
+                ('searchable_text', chunk.searchable_text, 0.60),  # Lower base, will be boosted by frequency/density
+                ('ocr_text_normalized', chunk.ocr_text_normalized, 0.55),
+                ('text_normalized', chunk.text_normalized, 0.58),
+                ('image_description', normalize_text(chunk.image_description) if chunk.image_description else None, 0.52)
+            ]
+            
+            for field_name, field_value, base_score in fields_to_check:
+                if field_value:
+                    field_score, match_count = calculate_match_score(
+                        field_value, 
+                        query_normalized, 
+                        base_score, 
+                        is_multi_word
+                    )
+                    
+                    if field_score > best_field_score:
+                        best_field_score = field_score
+                        best_field_name = field_name
+                        best_match_count = match_count
+            
+            if best_field_score > 0:
+                score = best_field_score
                 match_type = 'exact_phrase'
-                matched_field = 'searchable_text'
-                self.logger.info(f"✅ EXACT PHRASE! file={chunk.file_name}, score={score}")
-            
-            # ✨ Priority 2: Exact phrase match in OCR text
-            elif chunk.ocr_text_normalized and query_normalized in chunk.ocr_text_normalized:
-                score = 0.98  # Exact phrase in OCR text
-                match_type = 'exact_phrase'
-                matched_field = 'ocr_text_normalized'
-                self.logger.info(f"✅ EXACT PHRASE in OCR! file={chunk.file_name}, score={score}")
-            
-            # ✨ Priority 3: Exact phrase match in regular text
-            elif chunk.text_normalized and query_normalized in chunk.text_normalized:
-                score = 0.95  # Exact phrase in regular text
-                match_type = 'exact_phrase'
-                matched_field = 'text_normalized'
-                self.logger.info(f"✅ EXACT PHRASE in text! file={chunk.file_name}, score={score}")
-            
-            # ✨ Priority 4: Exact phrase in image description
-            elif chunk.image_description:
-                desc_normalized = normalize_text(chunk.image_description)
-                if query_normalized in desc_normalized:
-                    score = 0.93  # Exact phrase in image description
-                    match_type = 'exact_phrase'
-                    matched_field = 'image_description'
-                    self.logger.info(f"✅ EXACT PHRASE in image desc! file={chunk.file_name}, score={score}")
+                matched_field = best_field_name
+                total_match_count = best_match_count
+                
+                # Always log match details
+                field_text = None
+                if matched_field == 'searchable_text':
+                    field_text = chunk.searchable_text
+                elif matched_field == 'ocr_text_normalized':
+                    field_text = chunk.ocr_text_normalized
+                elif matched_field == 'text_normalized':
+                    field_text = chunk.text_normalized
+                elif matched_field == 'image_description':
+                    field_text = chunk.image_description
+                
+                if field_text:
+                    word_count = len(field_text.split())
+                    density = (total_match_count / word_count * 100) if word_count > 0 else 0
+                    query_words = len(query_normalized.split())
+                    self.logger.info(
+                        f"✅ MATCH! file={chunk.file_name}, score={score:.2f}, "
+                        f"field={matched_field}, occurrences={total_match_count}, "
+                        f"density={density:.2f}%, doc_words={word_count}, query_words={query_words}"
+                    )
+                else:
+                    self.logger.warning(
+                        f"⚠️ MATCH WITHOUT TEXT! file={chunk.file_name}, score={score:.2f}, "
+                        f"matched_field={matched_field}, field_text_is_none={field_text is None}"
+                    )
             
             # ✨ Priority 5: Partial word matching (LOWER SCORES)
             if score == 0.0:
@@ -460,8 +601,8 @@ class SearchService:
             if score > min_score_threshold:
                 parent_id = str(chunk.parent_id)
                 
-                # Keep only the best matching chunk per document
-                if parent_id not in chunk_matches or score > chunk_matches[parent_id]['score']:
+                # Aggregate scores across all chunks for the same document
+                if parent_id not in chunk_matches:
                     chunk_matches[parent_id] = {
                         'id': parent_id,
                         'score': score,
@@ -470,8 +611,33 @@ class SearchService:
                         'chunk_index': chunk.chunk_index,
                         'chunk_text': (chunk.text or chunk.ocr_text or '')[:200] + '...' 
                                      if len(chunk.text or chunk.ocr_text or '') > 200 
-                                     else (chunk.text or chunk.ocr_text or '')
+                                     else (chunk.text or chunk.ocr_text or ''),
+                        'match_count': total_match_count,
+                        'chunk_count': 1
                     }
+                else:
+                    # Document has multiple matching chunks - boost score and aggregate counts
+                    existing = chunk_matches[parent_id]
+                    existing['chunk_count'] += 1
+                    existing['match_count'] += total_match_count
+                    
+                    # Boost score for multiple chunk matches (indicates document-wide relevance)
+                    # Use logarithmic boost to avoid over-weighting
+                    import math
+                    multi_chunk_boost = 1.0 + (0.1 * math.log10(existing['chunk_count'] + 1))
+                    base_score_for_boost = max(existing['score'], score)
+                    new_score = min(1.0, base_score_for_boost * multi_chunk_boost)
+                    
+                    self.logger.info(
+                        f"🔄 Multi-chunk boost: {chunk.file_name}, chunk#{existing['chunk_count']}, "
+                        f"base={base_score_for_boost:.3f}, boost={multi_chunk_boost:.3f}x, "
+                        f"new_score={new_score:.3f}, prev_score={existing['score']:.3f}"
+                    )
+                    
+                    if new_score > existing['score']:
+                        existing['score'] = new_score
+                        existing['match_type'] = match_type
+                        existing['matched_field'] = matched_field
         
         # Merge chunk results with resource info
         for parent_id, chunk_match in chunk_matches.items():
@@ -489,6 +655,10 @@ class SearchService:
                     'matched_in_chunk': chunk_match['chunk_index'],
                     'chunk_preview': chunk_match['chunk_text'],
                     'created_at': parent.created_at.isoformat(),
+                    # Relevance metrics for debugging/display
+                    'occurrences': chunk_match.get('match_count', 0),
+                    'matching_chunks': chunk_match.get('chunk_count', 1),
+                    'matched_field': chunk_match.get('matched_field'),
                 })
         
         # Search by exact IDs in keywords

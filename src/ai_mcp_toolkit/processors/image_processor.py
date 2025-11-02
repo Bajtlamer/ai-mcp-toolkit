@@ -51,6 +51,9 @@ class ImageProcessor(BaseProcessor):
                     location_tags.extend([k.lower() for k in keywords.split(',') if k.strip()])
             
             # Build file-level metadata
+            # Store technical info separately from user description
+            technical_info = f"{image_format} image ({width}x{height})"
+            
             file_metadata = {
                 'file_type': 'image',
                 'size_bytes': len(file_bytes),
@@ -61,7 +64,9 @@ class ImageProcessor(BaseProcessor):
                 'aspect_ratio': round(width / height, 2) if height > 0 else 0,
                 'image_labels': location_tags,  # Can be enriched with vision AI later
                 'exif': exif_data,
-                'summary': f"{image_format} image ({width}x{height})",
+                'technical_metadata': technical_info,
+                # Only set summary if user hasn't provided a description
+                'summary': metadata.get('description') or technical_info,
             }
             
             # For images, create single chunk representing whole image

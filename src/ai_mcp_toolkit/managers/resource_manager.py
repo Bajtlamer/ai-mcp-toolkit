@@ -333,6 +333,30 @@ class ResourceManager:
             await resource.save()
             
             self.logger.info(f"Updated resource: {uri}")
+            
+            # Trigger background reindexing if searchable fields changed
+            searchable_fields_changed = any([
+                name is not None,
+                description is not None,
+                content is not None
+            ])
+            
+            if searchable_fields_changed:
+                import asyncio
+                from ..services.reindexing_service import get_reindexing_service
+                
+                # Fire reindexing task in background (non-blocking)
+                asyncio.create_task(
+                    get_reindexing_service().reindex_resource(
+                        resource=resource,
+                        reindex_keywords=False,  # Don't regenerate keywords on every edit
+                        reindex_embeddings=content is not None,  # Only if content changed
+                        reindex_suggestions=True,  # Always update autocomplete
+                        update_chunks=True  # Always update chunk searchable_text
+                    )
+                )
+                self.logger.info(f"🔄 Triggered background reindexing for: {uri}")
+            
             return resource
             
         except ValueError:
@@ -374,12 +398,24 @@ class ResourceManager:
             # 🐞 FIX: Delete associated chunks first
             from ..models.documents import ResourceChunk
             resource_id = str(resource.id)
+            company_id = resource.company_id or resource.owner_id
+            
             chunks_deleted = await ResourceChunk.find(
                 ResourceChunk.parent_id == resource_id
             ).delete()
             
             if chunks_deleted.deleted_count > 0:
                 self.logger.info(f"Deleted {chunks_deleted.deleted_count} chunks for resource {uri}")
+            
+            # Remove from Redis suggestions before deleting
+            try:
+                from ..services.reindexing_service import get_reindexing_service
+                await get_reindexing_service().remove_resource_from_indexes(
+                    resource_id=resource_id,
+                    company_id=company_id
+                )
+            except Exception as e:
+                self.logger.warning(f"Could not remove from indexes: {e}")
             
             # Delete resource
             await resource.delete()

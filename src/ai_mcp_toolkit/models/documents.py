@@ -186,7 +186,8 @@ class Resource(Document):
     # === NEW: File metadata ===
     size_bytes: Optional[int] = None
     tags: List[str] = Field(default_factory=list)
-    summary: Optional[str] = None  # AI-generated summary
+    summary: Optional[str] = None  # AI-generated summary or user description
+    technical_metadata: Optional[str] = None  # Technical info (file size, dimensions) - separate from user description
     
     # === NEW: Structured data fields for contextual search ===
     vendor: Optional[str] = None  # Normalized vendor name (e.g., "google", "t-mobile")

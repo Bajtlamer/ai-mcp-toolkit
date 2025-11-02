@@ -1138,6 +1138,13 @@ class HTTPServer:
                     f"({resource.file_type}, {len(content_bytes)} bytes)"
                 )
                 
+                # ✨ Trigger background reindexing (keywords/entities already extracted, just update Redis)
+                from ..services.resource_event_service import get_resource_event_service
+                event_service = get_resource_event_service()
+                asyncio.create_task(
+                    event_service.on_resource_created(resource, skip_embeddings=True)
+                )
+                
                 # Log audit event
                 await AuditLogger.log(
                     user=user,
@@ -1213,6 +1220,13 @@ class HTTPServer:
                 self.logger.info(
                     f"User {user.username} created snippet: {title} -> {resource.id} "
                     f"({len(text)} chars, source: {snippet_source})"
+                )
+                
+                # ✨ Trigger background reindexing
+                from ..services.resource_event_service import get_resource_event_service
+                event_service = get_resource_event_service()
+                asyncio.create_task(
+                    event_service.on_resource_created(resource, skip_embeddings=True)
                 )
                 
                 # Log audit event
