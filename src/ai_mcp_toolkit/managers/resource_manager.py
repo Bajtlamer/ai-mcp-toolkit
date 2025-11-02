@@ -371,10 +371,20 @@ class ResourceManager:
             if not is_admin and user_id and resource.owner_id != user_id:
                 raise ValueError(f"Access denied: Resource not found: {uri}")
             
+            # 🐞 FIX: Delete associated chunks first
+            from ..models.documents import ResourceChunk
+            resource_id = str(resource.id)
+            chunks_deleted = await ResourceChunk.find(
+                ResourceChunk.parent_id == resource_id
+            ).delete()
+            
+            if chunks_deleted.deleted_count > 0:
+                self.logger.info(f"Deleted {chunks_deleted.deleted_count} chunks for resource {uri}")
+            
             # Delete resource
             await resource.delete()
             
-            self.logger.info(f"Deleted resource: {uri}")
+            self.logger.info(f"✅ Deleted resource {uri} and all associated data")
             return True
             
         except ValueError:

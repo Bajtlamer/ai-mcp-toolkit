@@ -9,6 +9,7 @@ from bson import ObjectId
 from ..models.documents import Resource, ResourceChunk
 from .embedding_service import get_embedding_service
 from .query_analyzer import QueryAnalyzer
+from ..utils.text_normalizer import normalize_query, normalize_text, tokenize_for_search
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class SearchService:
         self.logger = logging.getLogger(__name__)
         self.embedding_service = get_embedding_service()
         self.query_analyzer = QueryAnalyzer()
-        self.logger.info("SearchService initialized with compound search support")
+        self.logger.info("✅ SearchService initialized with diacritic-insensitive search support")
     
     async def search(
         self,
@@ -149,11 +150,18 @@ class SearchService:
                 analysis['vendors'].append(vendor)
         
         # Determine recommended search type
+        # Simple heuristic: use keyword for exact/simple queries, semantic for natural language
+        query_words = query.strip().split()
+        
         if analysis['has_exact_id']:
+            analysis['recommended_type'] = 'keyword'
+        elif len(query_words) <= 2 and not analysis['has_money'] and not analysis['has_date']:
+            # Simple 1-2 word queries -> keyword search for exact matches
             analysis['recommended_type'] = 'keyword'
         elif analysis['has_money'] or analysis['has_date'] or analysis['has_vendor']:
             analysis['recommended_type'] = 'hybrid'
         else:
+            # Complex natural language queries -> semantic search
             analysis['recommended_type'] = 'semantic'
         
         return analysis
@@ -328,22 +336,118 @@ class SearchService:
                     'created_at': resource.created_at.isoformat(),
                 })
         
-        # Also search in chunks for more precise results
+        # ✨ NEW: Search in chunks using normalized searchable_text field
+        # Get ALL chunks (Beanie has a default limit of 150, so we need to specify explicitly)
         chunks = await ResourceChunk.find(
             ResourceChunk.company_id == company_id
-        ).to_list(limit * 5)
+        ).limit(1000).to_list()
         
         chunk_matches = {}
+        
+        # ✨ Normalize query for diacritic-insensitive matching
+        query_normalized = normalize_query(query)
+        query_tokens = set(tokenize_for_search(query_normalized))
+        
+        self.logger.info(f"🔍 KEYWORD SEARCH: query='{query}', normalized='{query_normalized}', company_id={company_id}")
+        self.logger.info(f"🔍 Found {len(chunks)} chunks to search")
+        self.logger.info(f"🔍 Query tokens: {query_tokens}")
+        
+        # Debug: Check first chunk to see what fields it has (safe for None)
+        if chunks:
+            sample = chunks[0]
+            st = getattr(sample, 'searchable_text', None)
+            st_preview = (st[:50] + '...') if isinstance(st, str) and st else ('NONE' if st is None else str(st))
+            self.logger.info(
+                f"🔍 Sample chunk fields: file_name={sample.file_name}, "
+                f"has_attr={hasattr(sample, 'searchable_text')}, "
+                f"is_str={isinstance(st, str)}, "
+                f"searchable_text_preview={st_preview}"
+            )
+        
         for chunk in chunks:
-            if chunk.text and query_pattern.search(chunk.text):
-                parent_id = chunk.parent_id
-                if parent_id not in chunk_matches or chunk_matches[parent_id]['score'] < 0.95:
+            score = 0.0
+            match_type = None
+            matched_field = None
+            
+            # ✨ Priority 1: Exact phrase match in searchable_text (HIGHEST SCORE)
+            if chunk.searchable_text and query_normalized in chunk.searchable_text:
+                score = 1.0  # Perfect exact phrase match
+                match_type = 'exact_phrase'
+                matched_field = 'searchable_text'
+                self.logger.info(f"✅ EXACT PHRASE! file={chunk.file_name}, score={score}")
+            
+            # ✨ Priority 2: Exact phrase match in OCR text
+            elif chunk.ocr_text_normalized and query_normalized in chunk.ocr_text_normalized:
+                score = 0.98  # Exact phrase in OCR text
+                match_type = 'exact_phrase'
+                matched_field = 'ocr_text_normalized'
+                self.logger.info(f"✅ EXACT PHRASE in OCR! file={chunk.file_name}, score={score}")
+            
+            # ✨ Priority 3: Exact phrase match in regular text
+            elif chunk.text_normalized and query_normalized in chunk.text_normalized:
+                score = 0.95  # Exact phrase in regular text
+                match_type = 'exact_phrase'
+                matched_field = 'text_normalized'
+                self.logger.info(f"✅ EXACT PHRASE in text! file={chunk.file_name}, score={score}")
+            
+            # ✨ Priority 4: Exact phrase in image description
+            elif chunk.image_description:
+                desc_normalized = normalize_text(chunk.image_description)
+                if query_normalized in desc_normalized:
+                    score = 0.93  # Exact phrase in image description
+                    match_type = 'exact_phrase'
+                    matched_field = 'image_description'
+                    self.logger.info(f"✅ EXACT PHRASE in image desc! file={chunk.file_name}, score={score}")
+            
+            # ✨ Priority 5: Partial word matching (LOWER SCORES)
+            if score == 0.0:
+                # Check for individual word matches with much lower scores
+                best_partial_score = 0.0
+                best_partial_field = None
+                
+                # Check each field for partial matches
+                fields_to_check = [
+                    ('searchable_text', chunk.searchable_text, 0.6),
+                    ('ocr_text_normalized', chunk.ocr_text_normalized, 0.55),
+                    ('text_normalized', chunk.text_normalized, 0.5)
+                ]
+                
+                for field_name, field_value, base_score in fields_to_check:
+                    if field_value:
+                        chunk_tokens = set(tokenize_for_search(field_value))
+                        overlap = query_tokens & chunk_tokens
+                        if overlap:
+                            # Score based on percentage of query tokens found
+                            overlap_ratio = len(overlap) / len(query_tokens) if query_tokens else 0
+                            if overlap_ratio >= 0.25:  # At least 25% of query tokens match
+                                partial_score = base_score * overlap_ratio
+                                if partial_score > best_partial_score:
+                                    best_partial_score = partial_score
+                                    best_partial_field = field_name
+                                    match_type = 'partial_words'
+                                    matched_field = field_name
+                                    self.logger.debug(
+                                        f"🔍 Partial match in {field_name} for {chunk.file_name}: "
+                                        f"{len(overlap)}/{len(query_tokens)} words, score={partial_score:.2f}"
+                                    )
+                
+                score = best_partial_score
+            
+            # Add to results if score is high enough
+            if score > 0.0:
+                parent_id = str(chunk.parent_id)
+                
+                # Keep only the best matching chunk per document
+                if parent_id not in chunk_matches or score > chunk_matches[parent_id]['score']:
                     chunk_matches[parent_id] = {
                         'id': parent_id,
-                        'score': 0.95,
-                        'match_type': 'chunk',
+                        'score': score,
+                        'match_type': match_type,
+                        'matched_field': matched_field,
                         'chunk_index': chunk.chunk_index,
-                        'chunk_text': chunk.text[:200] + '...' if len(chunk.text) > 200 else chunk.text
+                        'chunk_text': (chunk.text or chunk.ocr_text or '')[:200] + '...' 
+                                     if len(chunk.text or chunk.ocr_text or '') > 200 
+                                     else (chunk.text or chunk.ocr_text or '')
                     }
         
         # Merge chunk results with resource info
@@ -413,6 +517,14 @@ class SearchService:
             if result['id'] not in seen:
                 seen.add(result['id'])
                 unique_results.append(result)
+        
+        # Sort by score descending (highest first)
+        unique_results.sort(key=lambda x: x['score'], reverse=True)
+        
+        self.logger.info(f"✅ KEYWORD SEARCH COMPLETE: {len(unique_results)} unique results")
+        if unique_results:
+            for i, r in enumerate(unique_results[:3]):
+                self.logger.info(f"  Result {i+1}: {r.get('file_name')} - score={r.get('score'):.2f} - type={r.get('match_type')}")
         
         return unique_results[:limit]
     
@@ -487,7 +599,9 @@ class SearchService:
         limit: int = 30
     ) -> Dict[str, Any]:
         """
-        Simplified Atlas text search (compound doesn't work with knnBeta).
+        Compound search using normalized text matching.
+        
+        Uses keyword search with diacritic-insensitive matching for best accuracy.
         
         Args:
             query: Natural language search query
@@ -499,234 +613,16 @@ class SearchService:
             Search results with analysis
         """
         try:
-            self.logger.info(f"Using legacy hybrid search (compound not working)")
+            self.logger.info(f"✨ Compound search using normalized text matching for: '{query}'")
             
-            # Analyze query
-            analysis = self.query_analyzer.analyze(query)
-            
-            # Just use legacy hybrid search - it was working
-            return await self.search(query, company_id or owner_id, limit, search_type="hybrid")
-            
-            self.logger.info(f"Search text: '{search_text}'")
-            
-            # Build OR query for multiple words (better for partial matching)
-            pipeline = [
-                {
-                    "$search": {
-                        "index": "resource_chunks_compound",
-                        "compound": {
-                            "should": [
-                                # Exact phrase in OCR (highest priority)
-                                {
-                                    "phrase": {
-                                        "query": search_text,
-                                        "path": "ocr_text",
-                                        "score": {"boost": {"value": 20}}
-                                    }
-                                },
-                                # Individual words in OCR with fuzzy (for diacritics)
-                                {
-                                    "text": {
-                                        "query": search_text,
-                                        "path": "ocr_text",
-                                        "fuzzy": {"maxEdits": 2},
-                                        "score": {"boost": {"value": 10}}
-                                    }
-                                },
-                                # Fallback to regular text fields
-                                {
-                                    "text": {
-                                        "query": search_text,
-                                        "path": ["text", "content"],
-                                        "fuzzy": {"maxEdits": 1}
-                                    }
-                                }
-                            ],
-                            "minimumShouldMatch": 1
-                        }
-                    }
-                },
-                # Add score as field BEFORE grouping
-                {
-                    "$addFields": {
-                        "search_score": {"$meta": "searchScore"}
-                    }
-                },
-                # ACL filter AFTER search (post-filter)
-                {"$match": {"owner_id": owner_id}},
-                # Sort by score first
-                {"$sort": {"search_score": -1}},
-                # Group by parent_id to avoid duplicates (keep highest scoring chunk per resource)
-                {
-                    "$group": {
-                        "_id": "$parent_id",
-                        "file_name": {"$first": "$file_name"},
-                        "file_type": {"$first": "$file_type"},
-                        "text": {"$first": "$text"},
-                        "ocr_text": {"$first": "$ocr_text"},
-                        "caption": {"$first": "$caption"},
-                        "vendor": {"$first": "$vendor"},
-                        "currency": {"$first": "$currency"},
-                        "amounts_cents": {"$first": "$amounts_cents"},
-                        "page_number": {"$first": "$page_number"},
-                        "row_index": {"$first": "$row_index"},
-                        "score": {"$first": "$search_score"}
-                    }
-                },
-                # Sort grouped results by score
-                {"$sort": {"score": -1}},
-                {"$limit": limit},
-                {
-                    "$project": {
-                        "parent_id": 1,
-                        "file_name": 1,
-                        "file_type": 1,
-                        "text": 1,
-                        "ocr_text": 1,
-                        "caption": 1,
-                        "vendor": 1,
-                        "currency": 1,
-                        "amounts_cents": 1,
-                        "page_number": 1,
-                        "row_index": 1,
-                        "score": {"$meta": "searchScore"},
-                        "highlights": {"$meta": "searchHighlights"}
-                    }
-                }
-            ]
-            
-            # Execute search
-            chunks_collection = ResourceChunk.get_pymongo_collection()
-            cursor = chunks_collection.aggregate(pipeline)
-            results_raw = await cursor.to_list(length=limit)
-            
-            # Format results (grouped by parent_id now)
-            results = []
-            for r in results_raw:
-                results.append({
-                    'id': str(r.get('_id')),  # _id is now parent_id from grouping
-                    'file_name': r.get('file_name'),
-                    'file_type': r.get('file_type'),
-                    'text': r.get('text', '')[:200] if r.get('text') else '',
-                    'ocr_text': r.get('ocr_text'),
-                    'caption': r.get('caption'),
-                    'vendor': r.get('vendor'),
-                    'currency': r.get('currency'),
-                    'amounts_cents': r.get('amounts_cents'),
-                    'page_number': r.get('page_number'),
-                    'row_index': r.get('row_index'),
-                    'score': r.get('score', 0) / 10,  # Normalize score
-                    'highlights': [],
-                    'match_type': 'text_search',
-                    'open_url': self._build_deep_link({'id': str(r.get('_id')), 'page_number': r.get('page_number'), 'row_index': r.get('row_index')})
-                })
-            
-            self.logger.info(f"Found {len(results)} results")
-            
-            return {
-                'query': query,
-                'analysis': analysis,
-                'results': results,
-                'total': len(results),
-                'search_strategy': 'simple_text',
-            }
+            # Use keyword search which has the normalized text matching
+            # This gives us the best accuracy for diacritic-insensitive queries
+            return await self.search(query, company_id or owner_id, limit, search_type="keyword")
             
         except Exception as e:
-            self.logger.error(f"Search error: {e}", exc_info=True)
-            # Fallback to legacy
-            return await self.search(query, company_id or owner_id, limit, search_type="hybrid")
-    
-    async def _execute_atlas_compound_search(
-        self,
-        must_clauses: List[Dict],
-        should_clauses: List[Dict],
-        limit: int
-    ) -> List[Dict[str, Any]]:
-        """
-        Execute MongoDB Atlas $search.compound aggregation.
-        
-        Args:
-            must_clauses: Required filters
-            should_clauses: Optional ranking factors
-            limit: Max results
-            
-        Returns:
-            List of search results
-        """
-        # Build aggregation pipeline
-        pipeline = [
-            {
-                "$search": {
-                    "index": "resource_chunks_compound",
-                    "compound": {
-                        "must": must_clauses,
-                        "should": should_clauses,
-                        "minimumShouldMatch": 1 if should_clauses else 0
-                    }
-                }
-            },
-            {"$limit": limit},
-            {
-                "$project": {
-                    "parent_id": 1,
-                    "resource_uri": 1,
-                    "file_name": 1,
-                    "file_type": 1,
-                    "text": 1,
-                    "content": 1,
-                    "page_number": 1,
-                    "row_index": 1,
-                    "bbox": 1,
-                    "vendor": 1,
-                    "currency": 1,
-                    "amounts_cents": 1,
-                    "keywords": 1,
-                    "entities": 1,
-                    "caption": 1,
-                    "image_labels": 1,
-                    "ocr_text": 1,
-                    "score": {"$meta": "searchScore"},
-                    "highlights": {"$meta": "searchHighlights"}
-                }
-            }
-        ]
-        
-        # Execute aggregation on ResourceChunk collection
-        chunks_collection = ResourceChunk.get_pymongo_collection()
-        cursor = chunks_collection.aggregate(pipeline)
-        results = await cursor.to_list(length=limit)
-        
-        # Format results
-        formatted_results = []
-        for result in results:
-            formatted_results.append({
-                'id': str(result.get('parent_id')),
-                'file_name': result.get('file_name'),
-                'file_type': result.get('file_type'),
-                'chunk_text': result.get('text') or result.get('content', '')[:200],
-                'page_number': result.get('page_number'),
-                'row_index': result.get('row_index'),
-                'vendor': result.get('vendor'),
-                'currency': result.get('currency'),
-                'amounts_cents': result.get('amounts_cents'),
-                'score': result.get('score', 0),
-                'highlights': result.get('highlights', []),
-                'caption': result.get('caption'),
-                'ocr_text': result.get('ocr_text'),
-            })
-        
-        return formatted_results
-    
-    def _determine_match_type(self, result: Dict, analysis: Dict) -> str:
-        """Determine why this result matched (for explainability)."""
-        if analysis['money'] and result.get('currency'):
-            return 'exact_amount'
-        elif analysis['ids'] and any(id in result.get('keywords', []) for id in analysis['ids']):
-            return 'exact_id'
-        elif result['score'] > 0.8:
-            return 'semantic_strong'
-        else:
-            return 'hybrid'
+            self.logger.error(f"Compound search error: {e}", exc_info=True)
+            # Fallback to keyword search
+            return await self.search(query, company_id or owner_id, limit, search_type="keyword")
     
     def _build_deep_link(self, result: Dict) -> str:
         """Generate open URL for PDF page, CSV row, or image region."""

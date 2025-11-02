@@ -10,6 +10,56 @@ This document outlines the comprehensive task list for enhancing the AI MCP Tool
 
 ## Phase 0: Compound Search Implementation (2-3 weeks) **[IN PROGRESS]**
 
+### 0.0 Text Normalization for Diacritic-Insensitive Search ✅ **COMPLETED**
+- [x] **Task 0.0.1**: Create text normalizer utility ✅ **COMPLETED**
+  - [x] Implement `remove_diacritics()` function using Unicode NFD decomposition
+  - [x] Create `normalize_text()` for full text normalization
+  - [x] Create `normalize_query()` for search query normalization
+  - [x] Create `create_searchable_text()` to combine multiple text sources
+  - [x] Create `tokenize_for_search()` for keyword extraction
+  - **Files**: `src/ai_mcp_toolkit/utils/text_normalizer.py`
+  - **Date**: 2025-01-XX (Current)
+
+- [x] **Task 0.0.2**: Extend ResourceChunk schema with normalized fields ✅ **COMPLETED**
+  - [x] Add `text_normalized` field for normalized text content
+  - [x] Add `ocr_text_normalized` field for normalized OCR text
+  - [x] Add `searchable_text` field for combined normalized searchable content
+  - [x] Add `image_description` field for AI-generated image descriptions
+  - **Files**: `src/ai_mcp_toolkit/models/documents.py`
+  - **Date**: 2025-01-XX (Current)
+
+- [x] **Task 0.0.3**: Create Image OCR AI Agent ✅ **COMPLETED**
+  - [x] Implement `ImageOCRAgent` class extending `BaseAgent`
+  - [x] Integrate with `ImageCaptionService` for OCR and LLaVA descriptions
+  - [x] Add text normalization to all extracted text
+  - [x] Create `process_image_for_ingestion()` method for ingestion pipeline
+  - [x] Generate searchable text and keywords from normalized content
+  - **Files**: `src/ai_mcp_toolkit/agents/image_ocr_agent.py`
+  - **Date**: 2025-01-XX (Current)
+
+- [ ] **Task 0.0.4**: Update Ingestion Service to use OCR Agent **[NEXT]**
+  - [ ] Initialize `ImageOCRAgent` in ingestion service
+  - [ ] Route image uploads through OCR agent
+  - [ ] Normalize all text fields before storing chunks
+  - [ ] Populate `text_normalized`, `ocr_text_normalized`, `searchable_text` fields
+  - **Files**: `src/ai_mcp_toolkit/services/ingestion_service.py`
+
+- [x] **Task 0.0.5**: Simplify Search Service with normalized text ✅ **COMPLETED**
+  - [x] Normalize all search queries using `normalize_query()`
+  - [x] Updated keyword search to use `searchable_text` field
+  - [x] Added 5-level priority matching (searchable_text > OCR > text > description > token overlap)
+  - [x] Added metadata-aware score boosting for OCR/description matches
+  - [x] Keep semantic and hybrid search options working
+  - **Files**: `src/ai_mcp_toolkit/services/search_service.py`
+  - **Date**: 2025-01-XX (Current)
+
+- [ ] **Task 0.0.6**: Create OCR Agent UI page
+  - [ ] Create self-service OCR tool at `/agents/image-ocr`
+  - [ ] Add file upload for image OCR extraction
+  - [ ] Display OCR text, description, and normalized results
+  - [ ] Show extracted keywords and searchable text
+  - **Files**: `ui/src/routes/agents/image-ocr/+page.svelte`
+
 ### 0.1 Core Infrastructure
 - [x] **Task 0.1.1**: Extend ResourceChunk schema with compound search metadata ✅ **COMPLETED**
   - [x] Add `keywords`, `currency`, `amounts_cents`, `vendor`, `entities` fields

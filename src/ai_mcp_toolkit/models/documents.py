@@ -284,6 +284,12 @@ class ResourceChunk(Document):
     text: Optional[str] = None  # Extracted text (was 'content' in old schema)
     content: Optional[str] = None  # Alias for backward compatibility
     
+    # === NEW: Normalized text for diacritic-insensitive search ===
+    text_normalized: Optional[str] = None  # Text with diacritics removed
+    ocr_text_normalized: Optional[str] = None  # OCR text with diacritics removed
+    searchable_text: Optional[str] = None  # Combined normalized text from all sources
+    image_description: Optional[str] = None  # AI-generated image description (LLaVA)
+    
     # === Multi-modal embeddings ===
     text_embedding: Optional[List[float]] = None  # Text semantic vector (768 dims with nomic-embed-text)
     image_embedding: Optional[List[float]] = None  # Image semantic vector (future: for actual images)

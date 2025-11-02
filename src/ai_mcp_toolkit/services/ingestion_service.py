@@ -16,6 +16,13 @@ from ..processors import (
 from .embedding_service import get_embedding_service
 from .metadata_extractor import MetadataExtractor
 from .image_caption_service import ImageCaptionService
+from ..agents.image_ocr_agent import ImageOCRAgent
+from ..utils.text_normalizer import (
+    normalize_text,
+    create_searchable_text,
+    tokenize_for_search
+)
+from ..utils.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +38,12 @@ class IngestionService:
     4. Storage in MongoDB with proper relationships
     """
     
-    def __init__(self):
-        """Initialize ingestion service with processors and embedding service."""
+    def __init__(self, config: Optional[Config] = None):
+        """Initialize ingestion service with processors and embedding service.
+        
+        Args:
+            config: Optional config object (will use default if not provided)
+        """
         self.logger = logging.getLogger(__name__)
         
         # Initialize processors
@@ -52,7 +63,12 @@ class IngestionService:
             embedding_model="nomic-embed-text"
         )
         
-        self.logger.info("IngestionService initialized with compound search support")
+        # Initialize OCR AI Agent for image processing with text normalization
+        if config is None:
+            config = Config()
+        self.ocr_agent = ImageOCRAgent(config)
+        
+        self.logger.info("✅ IngestionService initialized with OCR Agent and text normalization")
     
     async def ingest_file(
         self,
@@ -108,22 +124,28 @@ class IngestionService:
                 # Generate image embedding
                 image_embedding = await self.embedding_service.embed_image(file_bytes)
                 
-                # Process image with caption and OCR
+                # ✨ Process image with OCR Agent (includes normalization)
                 try:
-                    # Save temp file for image caption service
+                    # Save temp file for OCR agent
                     import tempfile
+                    import os
                     with tempfile.NamedTemporaryFile(suffix=f".{filename.split('.')[-1]}", delete=False) as tmp:
                         tmp.write(file_bytes)
                         tmp_path = tmp.name
                     
                     try:
-                        image_caption_data = await self.image_caption_service.process_image(tmp_path)
-                        self.logger.info(f"Generated image caption and OCR for {filename}")
+                        # Use OCR Agent which automatically normalizes text
+                        image_caption_data = await self.ocr_agent.process_image_for_ingestion(tmp_path)
+                        self.logger.info(
+                            f"✅ OCR Agent processed {filename}: "
+                            f"OCR={len(image_caption_data.get('ocr_text', '') or '')} chars, "
+                            f"Description={len(image_caption_data.get('image_description', '') or '')} chars, "
+                            f"Searchable={len(image_caption_data.get('searchable_text', '') or '')} chars"
+                        )
                     finally:
-                        import os
                         os.unlink(tmp_path)  # Clean up temp file
                 except Exception as e:
-                    self.logger.warning(f"Could not process image caption/OCR for {filename}: {e}")
+                    self.logger.warning(f"Could not process image with OCR Agent for {filename}: {e}")
                     image_caption_data = None
             
             # Create Resource document with BOTH old (MCP) and new (search) fields
@@ -302,6 +324,40 @@ class IngestionService:
                 file_type=resource.file_type
             )
             
+            # Image-specific fields (from processor or image caption service)
+            caption = chunk_data.get('caption') or (image_caption_data.get('caption') if image_caption_data else None)
+            image_labels = chunk_data.get('image_labels', []) or (image_caption_data.get('image_labels', []) if image_caption_data else [])
+            ocr_text = chunk_data.get('ocr_text') or (image_caption_data.get('ocr_text') if image_caption_data else None)
+            caption_embedding = chunk_data.get('caption_embedding') or (image_caption_data.get('caption_embedding') if image_caption_data else None)
+            
+            # ✨ NEW: Normalize all text for diacritic-insensitive search
+            text_normalized = normalize_text(chunk_text) if chunk_text else None
+            ocr_text_normalized = normalize_text(ocr_text) if ocr_text else None
+            image_description = caption  # Use caption as image description
+            
+            # Create combined searchable text from all sources
+            searchable_text = create_searchable_text(
+                chunk_text,
+                ocr_text,
+                caption,
+                ' '.join(image_labels)
+            )
+            
+            # Extract additional keywords from searchable text
+            normalized_keywords = tokenize_for_search(searchable_text) if searchable_text else []
+            all_keywords = list(set(
+                (chunk_data.get('keywords', []) or extracted_metadata.get('keywords', [])) +
+                normalized_keywords
+            ))
+            
+            self.logger.debug(
+                f"Chunk {chunk_data.get('chunk_index', 0)}: "
+                f"text={len(chunk_text)} chars, "
+                f"normalized={len(text_normalized or '')} chars, "
+                f"searchable={len(searchable_text or '')} chars, "
+                f"keywords={len(all_keywords)}"
+            )
+            
             # Merge processor metadata with extracted metadata
             # Processor metadata takes precedence if present
             chunk = ResourceChunk(
@@ -321,14 +377,20 @@ class IngestionService:
                 text_embedding=embedding,
                 embedding=embedding,  # Backward compatibility alias
                 
+                # ✨ NEW: Normalized text fields
+                text_normalized=text_normalized,
+                ocr_text_normalized=ocr_text_normalized,
+                searchable_text=searchable_text,
+                image_description=image_description,
+                
                 # Deep-linking fields
                 page_number=chunk_data.get('page_number'),
                 row_index=chunk_data.get('row_number') or chunk_data.get('row_index'),
                 col_index=chunk_data.get('col_index'),
                 bbox=chunk_data.get('bbox'),
                 
-                # Compound search metadata (extracted)
-                keywords=chunk_data.get('keywords', []) or extracted_metadata.get('keywords', []),
+                # Compound search metadata (extracted + normalized)
+                keywords=all_keywords,
                 vendor=chunk_data.get('vendor') or extracted_metadata.get('vendor'),
                 currency=chunk_data.get('currency') or extracted_metadata.get('currency'),
                 amounts_cents=chunk_data.get('amounts_cents', []) or extracted_metadata.get('amounts_cents', []),
@@ -336,10 +398,10 @@ class IngestionService:
                 dates=chunk_data.get('dates', []),
                 
                 # Image-specific fields (from processor or image caption service)
-                caption=chunk_data.get('caption') or (image_caption_data.get('caption') if image_caption_data else None),
-                image_labels=chunk_data.get('image_labels', []) or (image_caption_data.get('image_labels', []) if image_caption_data else []),
-                ocr_text=chunk_data.get('ocr_text') or (image_caption_data.get('ocr_text') if image_caption_data else None),
-                caption_embedding=chunk_data.get('caption_embedding') or (image_caption_data.get('caption_embedding') if image_caption_data else None),
+                caption=caption,
+                image_labels=image_labels,
+                ocr_text=ocr_text,
+                caption_embedding=caption_embedding,
             )
             
             chunks_to_insert.append(chunk)
