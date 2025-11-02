@@ -7,6 +7,7 @@ from datetime import datetime
 from bson import ObjectId
 
 from ..models.documents import Resource, ResourceChunk
+from ..models.search_config import SearchCategory, SearchConfigService
 from .embedding_service import get_embedding_service
 from .query_analyzer import QueryAnalyzer
 from ..utils.text_normalizer import normalize_query, normalize_text, tokenize_for_search
@@ -138,16 +139,9 @@ class SearchService:
             analysis['has_date'] = True
             analysis['dates'] = date_matches
         
-        # Extract common vendor names
-        vendor_patterns = [
-            'google', 't-mobile', 'tmobile', 'amazon', 'aws', 'microsoft',
-            'apple', 'adobe', 'salesforce', 'zoom', 'slack'
-        ]
-        query_lower = query.lower()
-        for vendor in vendor_patterns:
-            if vendor in query_lower:
-                analysis['has_vendor'] = True
-                analysis['vendors'].append(vendor)
+        # This will be replaced with dynamic category detection
+        # Vendors will be detected using SearchCategory configuration
+        analysis['categories'] = {}  # Will store detected categories
         
         # Determine recommended search type
         # Simple heuristic: use keyword for exact/simple queries, semantic for natural language
@@ -290,53 +284,8 @@ class SearchService:
         """
         results = []
         
-        # Search in file names, summaries, and content using text matching
-        import re
-        query_pattern = re.compile(re.escape(query), re.IGNORECASE)
-        
-        all_resources = await Resource.find(
-            Resource.company_id == company_id
-        ).to_list(limit * 3)
-        
-        for resource in all_resources:
-            score = 0.0
-            match_field = None
-            
-            # Check file_name
-            if resource.file_name and query_pattern.search(resource.file_name):
-                score = 1.0
-                match_field = 'file_name'
-            # Check summary
-            elif resource.summary and query_pattern.search(resource.summary):
-                score = 0.9
-                match_field = 'summary'
-            # Check content
-            elif resource.content and query_pattern.search(resource.content):
-                score = 0.85
-                match_field = 'content'
-            # Check keywords
-            elif resource.keywords and any(query_pattern.search(kw) for kw in resource.keywords):
-                score = 0.95
-                match_field = 'keywords'
-            # Check entities
-            elif resource.entities and any(query_pattern.search(ent) for ent in resource.entities):
-                score = 0.8
-                match_field = 'entities'
-            
-            if score > 0:
-                results.append({
-                    'id': str(resource.id),
-                    'file_name': resource.file_name,
-                    'file_type': resource.file_type,
-                    'summary': resource.summary,
-                    'vendor': resource.vendor,
-                    'score': score,
-                    'match_type': 'keyword',
-                    'matched_field': match_field,
-                    'created_at': resource.created_at.isoformat(),
-                })
-        
-        # ✨ NEW: Search in chunks using normalized searchable_text field
+        # ✨ Search in chunks using normalized searchable_text field
+        # Chunks contain all content from resources, so we don't need resource-level search
         # Get ALL chunks (Beanie has a default limit of 150, so we need to specify explicitly)
         chunks = await ResourceChunk.find(
             ResourceChunk.company_id == company_id
@@ -406,10 +355,11 @@ class SearchService:
                 best_partial_field = None
                 
                 # Check each field for partial matches
+                # Lower base scores to reduce false positives
                 fields_to_check = [
-                    ('searchable_text', chunk.searchable_text, 0.6),
-                    ('ocr_text_normalized', chunk.ocr_text_normalized, 0.55),
-                    ('text_normalized', chunk.text_normalized, 0.5)
+                    ('searchable_text', chunk.searchable_text, 0.5),
+                    ('ocr_text_normalized', chunk.ocr_text_normalized, 0.45),
+                    ('text_normalized', chunk.text_normalized, 0.4)
                 ]
                 
                 for field_name, field_value, base_score in fields_to_check:
@@ -419,7 +369,9 @@ class SearchService:
                         if overlap:
                             # Score based on percentage of query tokens found
                             overlap_ratio = len(overlap) / len(query_tokens) if query_tokens else 0
-                            if overlap_ratio >= 0.25:  # At least 25% of query tokens match
+                            # Require at least 50% overlap for multi-word queries (stricter)
+                            min_threshold = 0.5 if len(query_tokens) > 1 else 0.25
+                            if overlap_ratio >= min_threshold:
                                 partial_score = base_score * overlap_ratio
                                 if partial_score > best_partial_score:
                                     best_partial_score = partial_score
@@ -428,13 +380,15 @@ class SearchService:
                                     matched_field = field_name
                                     self.logger.debug(
                                         f"🔍 Partial match in {field_name} for {chunk.file_name}: "
-                                        f"{len(overlap)}/{len(query_tokens)} words, score={partial_score:.2f}"
+                                        f"{len(overlap)}/{len(query_tokens)} words, overlap={overlap_ratio:.0%}, score={partial_score:.2f}"
                                     )
                 
                 score = best_partial_score
             
             # Add to results if score is high enough
-            if score > 0.0:
+            # Filter out weak partial matches (below 50%) to reduce noise
+            min_score_threshold = 0.5 if match_type == 'partial_words' else 0.0
+            if score > min_score_threshold:
                 parent_id = str(chunk.parent_id)
                 
                 # Keep only the best matching chunk per document
@@ -490,33 +444,67 @@ class SearchService:
                     })
         
         # Search by vendor
+        # Only use vendor matching if vendor is the main search term (not just incidental)
+        # e.g. "google" or "google invoices" YES, but "google tag manager" NO
         if query_analysis['vendors']:
-            for vendor in query_analysis['vendors']:
-                resources = await Resource.find(
-                    Resource.company_id == company_id,
-                    Resource.vendor == vendor
-                ).to_list(limit)
-                
-                for resource in resources:
-                    results.append({
-                        'id': str(resource.id),
-                        'file_name': resource.file_name,
-                        'file_type': resource.file_type,
-                        'summary': resource.summary,
-                        'vendor': resource.vendor,
-                        'score': 0.95,
-                        'match_type': 'vendor',
-                        'matched_value': vendor,
-                        'created_at': resource.created_at.isoformat(),
-                    })
+            # Check if query is primarily about the vendor (not a specific product/service)
+            query_words = set(query_normalized.split())
+            vendor_words = set(v.lower() for v in query_analysis['vendors'])
+            non_vendor_words = query_words - vendor_words - {'invoice', 'invoices', 'bill', 'bills', 'payment', 'payments'}
+            
+            # Only apply vendor filter if there is 1 or fewer non-vendor, non-invoice words
+            # This allows "google", "google invoice", "google czech" but blocks "google tag manager"
+            if len(non_vendor_words) <= 1:
+                for vendor in query_analysis['vendors']:
+                    resources = await Resource.find(
+                        Resource.company_id == company_id,
+                        Resource.vendor == vendor
+                    ).to_list(limit)
+                    
+                    for resource in resources:
+                        # Boost vendor matches with score 0.88
+                        # This ensures vendor matches rank high but don't override exact/keyword matches
+                        results.append({
+                            'id': str(resource.id),
+                            'file_name': resource.file_name,
+                            'file_type': resource.file_type,
+                            'summary': resource.summary,
+                            'vendor': resource.vendor,
+                            'score': 0.88,
+                            'match_type': 'vendor_filter',  # Changed to differentiate from semantic matches
+                            'matched_value': vendor,
+                            'created_at': resource.created_at.isoformat(),
+                        })
         
         # Deduplicate and limit
-        seen = set()
-        unique_results = []
+        # Keep the result with highest score for each document
+        # Prefer content-based matches (exact_phrase, keyword) over vendor_filter matches
+        results_map = {}
         for result in results:
-            if result['id'] not in seen:
-                seen.add(result['id'])
-                unique_results.append(result)
+            doc_id = result['id']
+            if doc_id not in results_map:
+                results_map[doc_id] = result
+            else:
+                existing = results_map[doc_id]
+                # Prefer higher score, but if scores are close (within 0.05),
+                # prefer content matches over vendor_filter matches
+                score_diff = result['score'] - existing['score']
+                if score_diff > 0.05:
+                    # New result has significantly higher score, use it
+                    results_map[doc_id] = result
+                elif score_diff > -0.05:
+                    # Scores are close, prefer content match over vendor_filter
+                    if existing['match_type'] == 'vendor_filter' and result['match_type'] != 'vendor_filter':
+                        results_map[doc_id] = result
+                    elif result['match_type'] == 'vendor_filter' and existing['match_type'] != 'vendor_filter':
+                        # Keep existing (content match)
+                        pass
+                    elif result['score'] > existing['score']:
+                        # Both same type, take higher score
+                        results_map[doc_id] = result
+                # else: existing has higher score, keep it
+        
+        unique_results = list(results_map.values())
         
         # Sort by score descending (highest first)
         unique_results.sort(key=lambda x: x['score'], reverse=True)

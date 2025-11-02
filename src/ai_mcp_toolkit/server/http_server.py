@@ -1406,6 +1406,65 @@ class HTTPServer:
                 self.logger.error(f"Error in compound search: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
         
+        @app.get("/search/suggestions")
+        async def get_search_suggestions(
+            q: str,
+            limit: int = 10,
+            user: User = Depends(require_auth)
+        ):
+            """
+            Get real-time search suggestions based on query prefix.
+            
+            Uses Redis for fast prefix matching across:
+            - File names
+            - Vendors
+            - Entities (companies, people)
+            - Keywords
+            - Common terms from document content
+            
+            Query parameters:
+            - q: Partial search query (min 2 characters)
+            - limit: Max number of suggestions (default 10)
+            
+            Returns:
+            [
+                {
+                    "text": "google cloud invoice",
+                    "type": "file",
+                    "score": 5.0
+                },
+                {
+                    "text": "google",
+                    "type": "vendor",
+                    "score": 3.2
+                }
+            ]
+            """
+            try:
+                from ..services.suggestion_service import SuggestionService
+                
+                if len(q) < 2:
+                    return []
+                
+                suggestion_service = SuggestionService()
+                
+                suggestions = await suggestion_service.get_suggestions(
+                    query=q,
+                    company_id=str(user.id),
+                    limit=limit
+                )
+                
+                self.logger.debug(
+                    f"User {user.username} suggestions for '{q}': {len(suggestions)} results"
+                )
+                
+                return suggestions
+                
+            except Exception as e:
+                self.logger.error(f"Error getting suggestions: {e}", exc_info=True)
+                # Return empty list on error (non-critical feature)
+                return []
+        
         @app.get("/resources/{uri:path}", response_model=Dict[str, Any])
         async def get_resource(uri: str, user: User = Depends(require_auth)):
             """Get a specific resource by URI (ownership checked)."""

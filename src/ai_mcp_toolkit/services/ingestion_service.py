@@ -191,6 +191,9 @@ class IngestionService:
             # Process and save chunks (pass image caption data if available)
             await self._ingest_chunks(resource, chunks_data, image_caption_data=image_caption_data)
             
+            # Index terms for search suggestions in Redis
+            await self._index_suggestions(resource)
+            
             return resource
             
         except Exception as e:
@@ -280,6 +283,9 @@ class IngestionService:
             
             # Process and save chunks
             await self._ingest_chunks(resource, chunks_data)
+            
+            # Index terms for search suggestions in Redis
+            await self._index_suggestions(resource)
             
             return resource
             
@@ -445,6 +451,43 @@ class IngestionService:
         
         # Default to text processor
         return self.text_processor
+    
+    async def _index_suggestions(self, resource: Resource) -> None:
+        """Index resource terms in Redis for search suggestions.
+        
+        Args:
+            resource: Resource to index
+        """
+        try:
+            from .suggestion_service import SuggestionService
+            
+            suggestion_service = SuggestionService()
+            
+            # Collect content from all chunks for term extraction
+            chunks = await ResourceChunk.find(
+                ResourceChunk.parent_id == str(resource.id)
+            ).to_list()
+            
+            # Combine all chunk text
+            combined_content = ' '.join(
+                chunk.text for chunk in chunks if chunk.text
+            )
+            
+            # Index terms in Redis
+            await suggestion_service.add_document_terms(
+                file_name=resource.file_name,
+                entities=resource.entities,
+                keywords=resource.keywords,
+                vendor=resource.vendor,
+                content=combined_content,
+                company_id=resource.company_id
+            )
+            
+            self.logger.debug(f"Indexed suggestions for resource: {resource.file_name}")
+            
+        except Exception as e:
+            # Non-critical: log but don't fail ingestion
+            self.logger.warning(f"Could not index suggestions for {resource.file_name}: {e}")
 
 
 # Global singleton instance

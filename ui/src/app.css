@@ -65,6 +65,10 @@
     @apply bg-success-100 text-success-800 dark:bg-success-900 dark:text-success-200;
   }
   
+  .badge-info {
+    @apply bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200;
+  }
+  
   .badge-warning {
     @apply bg-warning-100 text-warning-800 dark:bg-warning-900 dark:text-warning-200;
   }

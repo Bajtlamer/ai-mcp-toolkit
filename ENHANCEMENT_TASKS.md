@@ -10,7 +10,59 @@ This document outlines the comprehensive task list for enhancing the AI MCP Tool
 
 ## Phase 0: Compound Search Implementation (2-3 weeks) **[IN PROGRESS]**
 
-### 0.0 Text Normalization for Diacritic-Insensitive Search ✅ **COMPLETED**
+### 0.0 Search UX Improvements ✅ **COMPLETED**
+
+#### Exact Phrase Matching ✅ **COMPLETED**
+- [x] **Task 0.0.0**: Improve phrase matching and result scoring ✅ **COMPLETED**
+  - [x] Differentiate exact phrase matches from partial word matches
+  - [x] Exact phrases get 93-100% scores based on field
+  - [x] Partial matches get proportional scores (25-60% based on word overlap)
+  - [x] Add result sorting by score (highest first)
+  - **Files**: `src/ai_mcp_toolkit/services/search_service.py`
+  - **Date**: 2025-01-02
+
+#### Redis-Based Search Suggestions ✅ **COMPLETED**
+- [x] **Task 0.0.1a**: Create SuggestionService for Redis ✅ **COMPLETED**
+  - [x] Implement Redis sorted sets for term storage
+  - [x] Add `add_document_terms()` for indexing
+  - [x] Add `get_suggestions()` with ZRANGEBYLEX prefix matching
+  - [x] Multi-tenant isolation with company_id prefixes
+  - [x] Score-based ranking (type priority × frequency)
+  - **Files**: `src/ai_mcp_toolkit/services/suggestion_service.py`
+  - **Date**: 2025-01-02
+
+- [x] **Task 0.0.1b**: Add suggestions API endpoint ✅ **COMPLETED**
+  - [x] Create GET /search/suggestions endpoint
+  - [x] Return suggestions with type and score
+  - [x] Handle errors gracefully (non-critical feature)
+  - **Files**: `src/ai_mcp_toolkit/server/http_server.py`
+  - **Date**: 2025-01-02
+
+- [x] **Task 0.0.1c**: Integrate with ingestion pipeline ✅ **COMPLETED**
+  - [x] Add `_index_suggestions()` method to IngestionService
+  - [x] Call after chunks are created
+  - [x] Extract file_name, entities, keywords, vendor, content
+  - [x] Index in Redis with normalized text
+  - **Files**: `src/ai_mcp_toolkit/services/ingestion_service.py`
+  - **Date**: 2025-01-02
+
+- [x] **Task 0.0.1d**: Create Redis population script ✅ **COMPLETED**
+  - [x] Read all existing resources from MongoDB
+  - [x] Extract and combine chunk content
+  - [x] Populate Redis suggestions index
+  - [x] Add verification checks
+  - **Files**: `populate_redis_suggestions.py`
+  - **Date**: 2025-01-02
+
+- [ ] **Task 0.0.1e**: Add frontend suggestion dropdown **[IN PROGRESS]**
+  - [ ] Create API client function for suggestions
+  - [ ] Add debounced input handler (300ms)
+  - [ ] Create dropdown UI component
+  - [ ] Add keyboard navigation (up/down arrows)
+  - [ ] Click suggestion to fill search box
+  - **Files**: `ui/src/routes/search/+page.svelte`, `ui/src/lib/api/search.ts`
+
+### 0.1 Text Normalization for Diacritic-Insensitive Search ✅ **COMPLETED**
 - [x] **Task 0.0.1**: Create text normalizer utility ✅ **COMPLETED**
   - [x] Implement `remove_diacritics()` function using Unicode NFD decomposition
   - [x] Create `normalize_text()` for full text normalization

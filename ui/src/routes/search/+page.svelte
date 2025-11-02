@@ -28,6 +28,13 @@
   let error = null;
   let limit = 30;
   
+  // Suggestions state
+  let suggestions = [];
+  let showSuggestions = false;
+  let selectedSuggestionIndex = -1;
+  let suggestionTimeout = null;
+  let loadingSuggestions = false;
+  
   let showUploadModal = false;
   let uploadFile = null;
   let uploadTags = '';
@@ -67,18 +74,93 @@
     }
   }
   
+  async function getSuggestions(q) {
+    if (q.length < 2) {
+      suggestions = [];
+      showSuggestions = false;
+      return;
+    }
+    
+    try {
+      loadingSuggestions = true;
+      const response = await fetch(
+        `http://localhost:8000/search/suggestions?q=${encodeURIComponent(q)}&limit=10`,
+        { credentials: 'include' }
+      );
+      
+      if (response.ok) {
+        suggestions = await response.json();
+        showSuggestions = suggestions.length > 0;
+        selectedSuggestionIndex = -1;
+      }
+    } catch (err) {
+      console.error('Error fetching suggestions:', err);
+      suggestions = [];
+      showSuggestions = false;
+    } finally {
+      loadingSuggestions = false;
+    }
+  }
+  
+  function handleInput() {
+    // Debounce suggestions
+    if (suggestionTimeout) {
+      clearTimeout(suggestionTimeout);
+    }
+    
+    suggestionTimeout = setTimeout(() => {
+      getSuggestions(query);
+    }, 300);
+  }
+  
+  function selectSuggestion(suggestion) {
+    query = suggestion.text;
+    showSuggestions = false;
+    suggestions = [];
+    selectedSuggestionIndex = -1;
+    // Focus stays on input, user can press Enter to search
+  }
+  
   function handleKeyDown(event) {
+    // Handle suggestion navigation
+    if (showSuggestions && suggestions.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        selectedSuggestionIndex = Math.min(selectedSuggestionIndex + 1, suggestions.length - 1);
+        return;
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        selectedSuggestionIndex = Math.max(selectedSuggestionIndex - 1, -1);
+        return;
+      } else if (event.key === 'Enter' && selectedSuggestionIndex >= 0) {
+        event.preventDefault();
+        selectSuggestion(suggestions[selectedSuggestionIndex]);
+        return;
+      } else if (event.key === 'Escape') {
+        showSuggestions = false;
+        return;
+      }
+    }
+    
+    // Handle search
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
+      showSuggestions = false;
       performSearch();
     }
   }
   
   function getMatchTypeBadgeClass(matchType) {
     const classes = {
+      'exact_phrase': 'badge-success',
       'exact_amount': 'badge-success',
       'exact_id': 'badge-primary',
+      'exact_keyword': 'badge-primary',
+      'keyword': 'badge-info',
+      'partial_words': 'badge-secondary',
       'semantic_strong': 'badge-info',
+      'semantic_chunk': 'badge-info',
+      'vendor_filter': 'badge-warning',
       'hybrid': 'badge-secondary'
     };
     return classes[matchType] || 'badge-secondary';
@@ -86,9 +168,15 @@
   
   function getMatchTypeLabel(matchType) {
     const labels = {
+      'exact_phrase': '✨ Exact Phrase',
       'exact_amount': 'Exact Amount',
       'exact_id': 'Exact ID',
+      'exact_keyword': 'Exact Keyword',
+      'keyword': 'Keyword',
+      'partial_words': 'Partial Match',
       'semantic_strong': 'High Relevance',
+      'semantic_chunk': 'Semantic',
+      'vendor_filter': 'Vendor Match',
       'hybrid': 'Hybrid Match'
     };
     return labels[matchType] || matchType;
@@ -209,12 +297,44 @@
   <div class="relative mb-4">
     <textarea
       bind:value={query}
+      on:input={handleInput}
       on:keydown={handleKeyDown}
+      on:focus={() => { if (query.length >= 2 && suggestions.length > 0) showSuggestions = true; }}
+      on:blur={() => { setTimeout(() => showSuggestions = false, 200); }}
       placeholder="Search documents by meaning, IDs, amounts, vendors, or file types... (Press Enter)"
       class="w-full px-4 py-3 pr-20 border border-gray-300 dark:border-gray-600 rounded-3xl focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 transition-all max-h-40"
       rows="1"
       style="min-height: 52px;"
     ></textarea>
+    
+    <!-- Suggestions Dropdown -->
+    {#if showSuggestions && suggestions.length > 0}
+      <div class="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-80 overflow-y-auto z-50">
+        {#each suggestions as suggestion, index}
+          <button
+            type="button"
+            class="w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-between gap-3 {index === selectedSuggestionIndex ? 'bg-primary-50 dark:bg-primary-900/20' : ''}"
+            on:click={() => selectSuggestion(suggestion)}
+          >
+            <div class="flex items-center gap-3 flex-1 min-w-0">
+              {#if suggestion.type === 'file'}
+                <File class="w-4 h-4 text-primary-600 flex-shrink-0" />
+              {:else if suggestion.type === 'vendor'}
+                <Building class="w-4 h-4 text-blue-600 flex-shrink-0" />
+              {:else if suggestion.type === 'entity'}
+                <Hash class="w-4 h-4 text-green-600 flex-shrink-0" />
+              {:else if suggestion.type === 'keyword'}
+                <FileText class="w-4 h-4 text-purple-600 flex-shrink-0" />
+              {:else}
+                <Search class="w-4 h-4 text-gray-600 flex-shrink-0" />
+              {/if}
+              <span class="text-gray-900 dark:text-white truncate">{suggestion.text}</span>
+            </div>
+            <span class="text-xs text-gray-500 dark:text-gray-400 uppercase flex-shrink-0">{suggestion.type}</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
     
     <div class="absolute right-3 bottom-3 flex items-center space-x-2">
       {#if query.length > 0}
@@ -297,7 +417,8 @@
   <div class="flex items-center justify-between mt-3 text-xs text-gray-500 dark:text-gray-400">
     <div>
       Press <kbd class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs font-mono">Enter</kbd> to search • 
-      <kbd class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs font-mono">Shift+Enter</kbd> for new line
+      <kbd class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs font-mono">↑↓</kbd> to navigate suggestions • 
+      <kbd class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs font-mono">Esc</kbd> to close
     </div>
   </div>
 </div>
