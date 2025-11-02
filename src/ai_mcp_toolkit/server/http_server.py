@@ -199,6 +199,21 @@ class PromptCreate(BaseModel):
     version: str = "1.0.0"
 
 
+class OCRExtractionResponse(BaseModel):
+    """Response model for OCR extraction."""
+    success: bool
+    ocr_text: Optional[str] = None
+    ocr_text_normalized: Optional[str] = None
+    description: Optional[str] = None
+    description_normalized: Optional[str] = None
+    labels: List[str] = []
+    keywords: List[str] = []
+    searchable_text: Optional[str] = None
+    has_embedding: bool = False
+    embedding_dimensions: int = 0
+    error: Optional[str] = None
+
+
 class PromptUpdate(BaseModel):
     """Request model for updating a prompt."""
     description: Optional[str] = None
@@ -648,6 +663,107 @@ class HTTPServer:
             except Exception as e:
                 self.logger.error(f"Error listing agents: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
+        
+        # OCR extraction endpoint (requires auth)
+        @app.post("/api/ocr/extract", response_model=OCRExtractionResponse)
+        async def extract_ocr(
+            file: UploadFile = File(...),
+            extract_ocr: bool = Form(True),
+            generate_description: bool = Form(True),
+            normalize_text: bool = Form(True),
+            user: User = Depends(require_auth)
+        ):
+            """Extract text from uploaded image using OCR and AI description."""
+            import tempfile
+            import os
+            
+            try:
+                # Validate file type
+                if not file.content_type or not file.content_type.startswith('image/'):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid file type. Only image files are supported."
+                    )
+                
+                self.logger.info(f"OCR extraction request from user {user.username}: {file.filename}")
+                
+                # Save uploaded file to temp location
+                with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp_file:
+                    content = await file.read()
+                    tmp_file.write(content)
+                    tmp_file_path = tmp_file.name
+                
+                try:
+                    # Find the ImageOCR agent
+                    ocr_agent = None
+                    for agent_info in self.mcp_server.agents.values():
+                        if agent_info.name == "image-ocr":
+                            ocr_agent = agent_info.agent
+                            break
+                    
+                    if not ocr_agent:
+                        raise HTTPException(
+                            status_code=500,
+                            detail="OCR agent not available"
+                        )
+                    
+                    # Execute OCR extraction
+                    result_json = await ocr_agent.execute_tool(
+                        "extract_image_text",
+                        {
+                            "image_path": tmp_file_path,
+                            "extract_ocr": extract_ocr,
+                            "generate_description": generate_description,
+                            "normalize_text": normalize_text
+                        }
+                    )
+                    
+                    # Parse result
+                    result = json.loads(result_json)
+                    
+                    # Log audit event
+                    await AuditLogger.log(
+                        user=user,
+                        action="ocr.extract",
+                        method="POST",
+                        endpoint="/api/ocr/extract",
+                        status_code=200,
+                        resource_type="ocr",
+                        request_data={"filename": file.filename}
+                    )
+                    
+                    return OCRExtractionResponse(
+                        success=result.get("success", False),
+                        ocr_text=result.get("ocr_text"),
+                        ocr_text_normalized=result.get("ocr_text_normalized"),
+                        description=result.get("description"),
+                        description_normalized=result.get("description_normalized"),
+                        labels=result.get("labels", []),
+                        keywords=result.get("keywords", []),
+                        searchable_text=result.get("searchable_text"),
+                        has_embedding=result.get("has_embedding", False),
+                        embedding_dimensions=result.get("embedding_dimensions", 0),
+                        error=result.get("error")
+                    )
+                    
+                finally:
+                    # Clean up temp file
+                    try:
+                        os.unlink(tmp_file_path)
+                    except Exception as cleanup_error:
+                        self.logger.warning(f"Failed to cleanup temp file {tmp_file_path}: {cleanup_error}")
+                
+            except HTTPException as he:
+                self.logger.error(f"HTTP exception in OCR: {he.detail}", exc_info=True)
+                raise
+            except Exception as e:
+                self.logger.error(f"Error extracting OCR: {e}", exc_info=True)
+                import traceback
+                traceback.print_exc()
+                return OCRExtractionResponse(
+                    success=False,
+                    error=str(e)
+                )
 
         # GPU health check endpoint (public - no auth required)
         @app.get("/gpu/health")

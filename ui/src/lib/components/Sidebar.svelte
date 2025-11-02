@@ -20,7 +20,8 @@
     Cpu,
     Activity,
     Database,
-    Search
+    Search,
+    ScanText
   } from 'lucide-svelte';
   
   const dispatch = createEventDispatcher();
@@ -59,7 +60,8 @@
         { name: 'Sentiment Analyzer', href: '/agents/sentiment-analyzer', icon: Heart },
         { name: 'Text Anonymizer', href: '/agents/text-anonymizer', icon: Shield },
         { name: 'Diacritic Remover', href: '/agents/diacritic-remover', icon: Type },
-        { name: 'PDF Text Extractor', href: '/agents/pdf-extractor', icon: FileText }
+        { name: 'PDF Text Extractor', href: '/agents/pdf-extractor', icon: FileText },
+        { name: 'OCR Text Extractor', href: '/agents/ocr-extractor', icon: ScanText }
       ]
     }
   ];

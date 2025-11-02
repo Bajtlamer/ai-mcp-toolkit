@@ -14,7 +14,9 @@
     Bot,
     Wand2,
     Filter,
-    Search
+    Search,
+    Image,
+    ScanText
   } from 'lucide-svelte';
   import { goto } from '$app/navigation';
 
@@ -112,6 +114,23 @@
           features: ["PII Removal", "Hash Replacement", "Multiple Strategies", "AI Detection"],
           difficulty: "Advanced",
           speed: "Medium"
+        }
+      ]
+    },
+    {
+      title: "Image Processing",
+      description: "Extract and analyze content from images",
+      icon: Image,
+      color: "orange",
+      agents: [
+        {
+          name: "OCR Text Extractor",
+          description: "Extract text from images using advanced Optical Character Recognition (Tesseract OCR)",
+          path: "/agents/ocr-extractor",
+          icon: ScanText,
+          features: ["Multi-language OCR", "High Accuracy", "Layout Preservation", "Copy to Clipboard"],
+          difficulty: "Easy",
+          speed: "Fast"
         }
       ]
     }

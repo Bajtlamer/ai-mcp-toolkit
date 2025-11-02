@@ -32,6 +32,7 @@ from ..agents.language_detector import LanguageDetectorAgent
 from ..agents.sentiment_analyzer import SentimentAnalyzerAgent
 from ..agents.text_anonymizer import TextAnonymizerAgent
 from ..agents.pdf_extractor import PDFExtractorAgent
+from ..agents.image_ocr_agent import ImageOCRAgent
 from ..utils.config import Config
 from ..utils.logger import get_logger
 from ..utils.gpu_monitor import get_gpu_monitor
@@ -314,6 +315,14 @@ class MCPServer:
                 "pdf_extractor",
                 "Extract text content from PDF files",
                 pdf_extractor
+            )
+            
+            # Image OCR Agent
+            image_ocr = ImageOCRAgent(self.config)
+            self._register_agent(
+                "image-ocr",
+                "Extract text from images using OCR and generate AI descriptions",
+                image_ocr
             )
             
             self.logger.info(f"Initialized {len(self.agents)} agents")
