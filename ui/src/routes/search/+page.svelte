@@ -38,6 +38,7 @@
   
   let showUploadModal = false;
   let uploadFile = null;
+  let uploadDescription = '';
   let uploadTags = '';
   let uploading = false;
   
@@ -212,6 +213,9 @@
     try {
       const formData = new FormData();
       formData.append('file', uploadFile);
+      if (uploadDescription) {
+        formData.append('description', uploadDescription);
+      }
       formData.append('tags', uploadTags);
       
       const response = await fetch('http://localhost:8000/resources/upload', {
@@ -229,6 +233,7 @@
       toast.success(`File uploaded: ${data.file_name}`);
       
       uploadFile = null;
+      uploadDescription = '';
       uploadTags = '';
       showUploadModal = false;
       
@@ -612,6 +617,18 @@
             on:change={(e) => uploadFile = e.target.files[0]}
             class="input-field"
             accept=".pdf,.csv,.txt,.md,.json,.ini,.png,.jpg,.jpeg,.gif"
+          />
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Description (optional)
+          </label>
+          <textarea
+            bind:value={uploadDescription}
+            placeholder="Describe this file..."
+            rows="2"
+            class="textarea-field"
           />
         </div>
         

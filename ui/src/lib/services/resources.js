@@ -45,9 +45,14 @@ export async function getResource(uri) {
  * - Vector embeddings generation for semantic search
  * - Chunk-level indexing for precise results
  */
-export async function uploadResource(file, tags = []) {
+export async function uploadResource(file, tags = [], description = '') {
   const formData = new FormData();
   formData.append('file', file);
+  
+  // Description for the resource
+  if (description && description.trim()) {
+    formData.append('description', description.trim());
+  }
   
   // Tags for categorization
   if (Array.isArray(tags) && tags.length > 0) {

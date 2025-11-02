@@ -1213,6 +1213,7 @@ class HTTPServer:
         @app.post("/resources/upload", status_code=201)
         async def upload_resource(
             file: UploadFile = File(...),
+            description: str = Form(""),
             tags: str = Form(""),
             user: User = Depends(require_auth)
         ):
@@ -1239,6 +1240,11 @@ class HTTPServer:
                 # Get ingestion service
                 ingestion_service = get_ingestion_service()
                 
+                # Prepare metadata with user description if provided
+                upload_metadata = {}
+                if description and description.strip():
+                    upload_metadata['description'] = description.strip()
+                
                 # Ingest file
                 resource = await ingestion_service.ingest_file(
                     file_bytes=content_bytes,
@@ -1247,6 +1253,7 @@ class HTTPServer:
                     company_id=str(user.id),  # For now, use user ID as company ID
                     user_id=str(user.id),
                     tags=tags_list,
+                    metadata=upload_metadata
                 )
                 
                 self.logger.info(

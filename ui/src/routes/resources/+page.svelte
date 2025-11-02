@@ -123,7 +123,7 @@
       name: '',
       description: '',
       mime_type: 'text/plain',
-      resource_type: 'text',
+      resource_type: 'file',  // DEFAULT: File type
       content: ''
     };
     formErrors = {};
@@ -402,7 +402,8 @@
         
         await resourceAPI.uploadResource(
           selectedFile,
-          tags
+          tags,
+          formData.description
         );
       } else {
         // Otherwise use regular create endpoint

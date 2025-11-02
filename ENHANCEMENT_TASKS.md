@@ -985,9 +985,19 @@ This document outlines the comprehensive task list for enhancing the AI MCP Tool
 - ⏳ TODO: Add resource delete handler
 - 📄 See: `docs/SEARCH_UX_REINDEXING_COMPLETE.md` for details
 
-### Remaining Issues Identified:
-1. **File type not defaulting** - Need to set default file type when adding resources
-2. **Description being overwritten** - System metadata overwrites user description
+### Recently Fixed Issues (2025-11-02):
+1. ✅ **File type now defaults to FILE** - Resource creation modal defaults to "file" type instead of "text"
+2. ✅ **Description merging implemented** - User descriptions and AI descriptions are now merged, not overwritten
+   - Priority: User description + AI description (merged with ". ")
+   - User description preserved on upload and edits
+   - Technical metadata stored separately in `metadata.technical_metadata`
+   - Files: `server/http_server.py`, `services/ingestion_service.py`, `ui/src/routes/resources/+page.svelte`
+3. ✅ **OCR Agent UI implemented** - Created `/agents/ocr-extractor` page with full functionality
+   - Image upload with drag & drop
+   - Text extraction using Tesseract OCR
+   - AI description generation
+   - Copy to clipboard and download features
+   - Integrated into sidebar navigation
 
 ## Notes
 

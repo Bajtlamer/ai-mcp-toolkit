@@ -112,10 +112,6 @@ class IngestionService:
             file_metadata = result['file_metadata']
             chunks_data = result['chunks']
             
-            # Generate file-level text embedding
-            file_text = file_metadata.get('summary', '') or filename
-            file_embedding = await self.embedding_service.embed_text(file_text)
-            
             # Generate image embedding and process image-specific metadata
             image_embedding = None
             image_caption_data = None
@@ -151,7 +147,44 @@ class IngestionService:
             # Create Resource document with BOTH old (MCP) and new (search) fields
             file_id = f"files/{datetime.utcnow().strftime('%Y/%m')}/{filename}"
             uri = f"file:///{user_id}/{filename}"  # MCP-compatible URI
-            summary_text = file_metadata.get('summary', '') or f"Uploaded file: {filename}"
+            
+            # Merge user description with AI description for images:
+            # - User description (if provided) + AI description
+            # - This preserves user intent while enriching with AI insights
+            user_description = metadata.get('description', '') if metadata else ''
+            ai_description = image_caption_data.get('image_description', '') if image_caption_data else ''
+            
+            if user_description and ai_description:
+                # Merge both: user description first, then AI description
+                summary_text = f"{user_description}. {ai_description}"
+                self.logger.info(f"✅ Merged user + AI description: {summary_text[:80]}...")
+            elif user_description:
+                # User description only
+                summary_text = user_description
+                self.logger.info(f"✅ Using user-provided description: {summary_text[:50]}...")
+            elif ai_description:
+                # AI description only (for images without user description)
+                summary_text = ai_description
+                self.logger.info(f"Using AI description for image: {summary_text[:50]}...")
+            else:
+                # Fallback to file summary or filename
+                summary_text = file_metadata.get('summary', '') or f"Uploaded file: {filename}"
+            
+            # Generate file-level text embedding from FINAL description (not technical metadata)
+            # This ensures semantic search uses the meaningful description, not just technical info
+            file_embedding = await self.embedding_service.embed_text(summary_text)
+            
+            # For images, add technical metadata to keywords for searchability
+            keywords_list = list(file_metadata.get('keywords', []))
+            if file_metadata.get('file_type') == 'image' and file_metadata.get('technical_metadata'):
+                # Add technical info as keywords: format name, dimensions
+                tech_info = file_metadata.get('technical_metadata', '')
+                if file_metadata.get('image_format'):
+                    keywords_list.append(file_metadata['image_format'].lower())
+                if file_metadata.get('width') and file_metadata.get('height'):
+                    keywords_list.append(f"{file_metadata['width']}x{file_metadata['height']}")
+                    keywords_list.append(f"{file_metadata['width']}px")
+                    keywords_list.append(f"{file_metadata['height']}px")
             
             resource = Resource(
                 # OLD/Required MCP fields
@@ -173,7 +206,7 @@ class IngestionService:
                 currency=file_metadata.get('currency'),
                 amounts_cents=file_metadata.get('amounts_cents', []),
                 entities=file_metadata.get('entities', []),
-                keywords=file_metadata.get('keywords', []),
+                keywords=keywords_list,  # Now includes technical metadata
                 dates=file_metadata.get('dates', []),
                 summary=summary_text,
                 text_embedding=file_embedding,
