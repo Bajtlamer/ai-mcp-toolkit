@@ -15,7 +15,9 @@
     Send,
     ExternalLink,
     Mail,
-    CreditCard
+    CreditCard,
+    Eye,
+    Image
   } from 'lucide-svelte';
   import toast from 'svelte-french-toast';
   import { compoundSearch, getSearchSuggestions } from '$lib/api/search';
@@ -465,18 +467,34 @@
               <h3 class="text-lg font-semibold text-gray-900 dark:text-white truncate">
                 {result.file_name}
               </h3>
-              {#if result.open_url}
-                <a
-                  href={result.open_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="btn btn-sm btn-secondary flex items-center gap-1 flex-shrink-0"
-                  title="Open document"
-                >
-                  <ExternalLink class="w-3 h-3" />
-                  Open
-                </a>
-              {/if}
+              <div class="flex gap-1.5 flex-shrink-0">
+                {#if result.file_id && (result.mime_type === 'application/pdf' || result.mime_type?.startsWith('image/'))}
+                  <a
+                    href="/api/resources/download/{result.file_id}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="p-1.5 rounded hover:bg-primary-100 dark:hover:bg-primary-900 text-primary-600 dark:text-primary-400 transition-colors"
+                    title="{result.mime_type === 'application/pdf' ? 'View PDF' : 'View image'}"
+                  >
+                    {#if result.mime_type === 'application/pdf'}
+                      <Eye class="w-4 h-4" />
+                    {:else}
+                      <Image class="w-4 h-4" />
+                    {/if}
+                  </a>
+                {/if}
+                {#if result.open_url}
+                  <a
+                    href={result.open_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 transition-colors"
+                    title="Open document"
+                  >
+                    <ExternalLink class="w-4 h-4" />
+                  </a>
+                {/if}
+              </div>
             </div>
             
             {#if result.text}

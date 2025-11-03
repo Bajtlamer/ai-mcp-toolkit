@@ -2,6 +2,7 @@
   import { BarChart3, Play, Download, Hash, Type, BookOpen, Target, Database } from 'lucide-svelte';
   import ResourceSelector from '$lib/components/ResourceSelector.svelte';
   import * as resourceAPI from '$lib/services/resources';
+  import { fetchResourceText } from '$lib/utils/resourceTextFetcher.js';
 
   let inputText = '';
   let inputUrl = '';
@@ -46,12 +47,7 @@
       } else if (inputMode === 'url') {
         args.url = inputUrl;
       } else if (inputMode === 'resource') {
-        const resource = await resourceAPI.getResource(selectedResourceUri);
-        if (resource && resource.text) {
-          args.text = resource.text;
-        } else {
-          throw new Error('Could not fetch resource content');
-        }
+        args.text = await fetchResourceText(selectedResourceUri, resourceAPI.getResource);
       }
       
       // Run all analyses in parallel

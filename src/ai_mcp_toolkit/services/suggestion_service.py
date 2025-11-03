@@ -382,6 +382,99 @@ class SuggestionService:
         except Exception as e:
             self.logger.error(f"Error indexing resource: {e}", exc_info=True)
     
+    def _extract_common_terms(self, text: str, max_terms: int = 50) -> List[str]:
+        """
+        Extract common meaningful terms from text.
+        
+        Args:
+            text: Input text
+            max_terms: Maximum number of terms to extract
+            
+        Returns:
+            List of meaningful terms
+        """
+        if not text:
+            return []
+        
+        try:
+            # Normalize text
+            normalized = normalize_text(text)
+            
+            # Tokenize
+            tokens = tokenize_for_search(normalized)
+            
+            # Stop words to filter out
+            stop_words = {
+                'the', 'and', 'for', 'are', 'but', 'not', 'this', 'that', 'with', 
+                'from', 'have', 'has', 'was', 'were', 'been', 'will', 'can', 'could',
+                'would', 'should', 'may', 'might', 'must', 'shall', 'into', 'onto',
+                'upon', 'about', 'before', 'after', 'during', 'while', 'since'
+            }
+            
+            # Filter meaningful tokens (length >= 3, not stop words)
+            meaningful = [
+                t for t in tokens
+                if len(t) >= 3 and t not in stop_words and t.isalpha()
+            ]
+            
+            # Return unique terms, limited to max_terms
+            return list(set(meaningful))[:max_terms]
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting terms: {e}")
+            return []
+    
+    def _extract_phrases(self, text: str, max_phrases: int = 20) -> List[str]:
+        """
+        Extract 2-3 word phrases from text.
+        
+        Args:
+            text: Input text
+            max_phrases: Maximum number of phrases to extract
+            
+        Returns:
+            List of meaningful phrases
+        """
+        if not text:
+            return []
+        
+        try:
+            # Normalize text
+            normalized = normalize_text(text)
+            words = normalized.split()
+            
+            # Stop words
+            stop_words = {
+                'the', 'and', 'for', 'are', 'but', 'not', 'this', 'that', 'with',
+                'from', 'have', 'has', 'was', 'were', 'been'
+            }
+            
+            phrases = []
+            
+            # Extract 2-word phrases
+            for i in range(len(words) - 1):
+                if (len(words[i]) >= 3 and len(words[i+1]) >= 3 and
+                    words[i] not in stop_words and words[i+1] not in stop_words and
+                    words[i].isalpha() and words[i+1].isalpha()):
+                    phrase = f"{words[i]} {words[i+1]}"
+                    phrases.append(phrase)
+            
+            # Extract 3-word phrases
+            for i in range(len(words) - 2):
+                if (len(words[i]) >= 3 and len(words[i+1]) >= 3 and len(words[i+2]) >= 3 and
+                    words[i] not in stop_words and words[i+1] not in stop_words and 
+                    words[i+2] not in stop_words and
+                    words[i].isalpha() and words[i+1].isalpha() and words[i+2].isalpha()):
+                    phrase = f"{words[i]} {words[i+1]} {words[i+2]}"
+                    phrases.append(phrase)
+            
+            # Return unique phrases, limited to max_phrases
+            return list(set(phrases))[:max_phrases]
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting phrases: {e}")
+            return []
+    
     async def remove_resource_suggestions(
         self,
         resource_id: str,

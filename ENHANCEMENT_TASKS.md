@@ -643,7 +643,7 @@ This document outlines the comprehensive task list for enhancing the AI MCP Tool
   - [x] Auto-create conversation on first message
   - **Date**: 2025-10-27
 
-### 3.6 Server-Side Authentication Migration (NEW) 🔴 **CRITICAL** 🚧 **IN PROGRESS**
+### 3.6 Server-Side Authentication Migration (NEW) 🔴 **CRITICAL** ✅ **COMPLETE**
 **Goal**: Migrate from client-side auth store to proper SvelteKit server-side authentication following best practices.
 
 **Background**: Current implementation uses client-side auth store with API calls from browser, causing:
@@ -756,6 +756,61 @@ This document outlines the comprehensive task list for enhancing the AI MCP Tool
   - **Files**: `AUTH_MIGRATION.md`
   - **Date**: 2025-10-27
 
+### 3.7 Local File Storage System (NEW) ✅ **COMPLETE** (2025-01-03)
+**Goal**: Store all uploaded files locally on server for viewing, downloading, and displaying in search results.
+
+**Background**: Previously, only file metadata and extracted content were stored in MongoDB. Users couldn't view original PDFs, download files, or display images from search results. Files needed to be re-uploaded to access them.
+
+**Solution**: Implement dual storage strategy:
+- MongoDB: Metadata, embeddings, search chunks, text content
+- Local filesystem: Original binary files with UUID-based organization
+
+- [x] **Task 3.7.1**: Create FileStorageService ✅ **COMPLETED**
+  - [x] Implement file storage service with UUID-based filenames
+  - [x] Organize files by user and date: `{user_id}/{year}/{month}/{uuid}.ext`
+  - [x] Add `save_file()`, `get_file()`, `delete_file()` methods
+  - [x] Add `file_exists()`, `get_file_path()`, `get_storage_stats()` helpers
+  - [x] User isolation and secure path handling
+  - [x] Global singleton service with `get_file_storage_service()`
+  - **Files**: `src/ai_mcp_toolkit/services/file_storage_service.py`
+  - **Date**: 2025-01-03
+
+- [x] **Task 3.7.2**: Integrate with upload pipeline ✅ **COMPLETED**
+  - [x] Save files to local storage BEFORE processing
+  - [x] Generate UUID for each file
+  - [x] Store file_id and storage path in resource metadata
+  - [x] Preserve original filename in metadata
+  - [x] Add file_storage info to metadata (file_path, relative_path, stored_at)
+  - **Files**: `src/ai_mcp_toolkit/services/ingestion_service.py`
+  - **Date**: 2025-01-03
+
+- [x] **Task 3.7.3**: Add file download/view endpoint ✅ **COMPLETED**
+  - [x] Create `GET /resources/download/{file_id}` endpoint
+  - [x] Verify authentication and ownership
+  - [x] Return file with appropriate MIME type
+  - [x] Support inline viewing (PDFs in browser)
+  - [x] Add audit logging for downloads
+  - [x] Admin override for accessing any file
+  - **Files**: `src/ai_mcp_toolkit/server/http_server.py`
+  - **Date**: 2025-01-03
+
+- [x] **Task 3.7.4**: Fix PDF extractor page ✅ **COMPLETED**
+  - [x] Update to use backend API for PDF text extraction
+  - [x] Detect already-extracted text from backend
+  - [x] Fallback to pdf_bytes from metadata if needed
+  - [x] Better error messages for missing files
+  - **Files**: `ui/src/routes/agents/pdf-extractor/+page.svelte`
+  - **Date**: 2025-01-03
+
+- [x] **Task 3.7.5**: Configuration and documentation ✅ **COMPLETED**
+  - [x] Add FILE_STORAGE_PATH configuration to .env.example
+  - [x] Default storage: `${DATA_DIR}/uploads/`
+  - [x] Document file structure and organization
+  - [x] Create comprehensive LOCAL_FILE_STORAGE.md documentation
+  - [x] Include backup strategy and security features
+  - **Files**: `.env.example`, `LOCAL_FILE_STORAGE.md`
+  - **Date**: 2025-01-03
+
 ## Phase 4: Integration & Testing (1-2 weeks)
 
 ### 4.1 System Integration
@@ -867,22 +922,37 @@ This document outlines the comprehensive task list for enhancing the AI MCP Tool
 - [ ] Pipeline Processing System: 0/4 tasks
 - [ ] Agent Chaining and Workflows: 0/4 tasks
 
-### Phase 3 Progress: 20/34 tasks completed (59%)
+### Phase 3 Progress: 25/39 tasks completed (64%)
 - [ ] Memory and Persistence: 0/4 tasks
 - [ ] Event System: 0/4 tasks
 - [ ] Advanced Agent Features: 0/4 tasks
 - [x] Security and Access Control: 2/3 tasks (100% ✅ COMPLETE) - 1 deferred as low priority
 - [x] Per-User Data Storage: 5/7 tasks (100% ✅ COMPLETE) - 2 deferred as low priority
 - [x] Server-Side Auth Migration: 11/11 tasks (100% ✅ COMPLETE)
+- [x] Local File Storage System: 5/5 tasks (100% ✅ COMPLETE)
 
 ### Phase 4 Progress: 0/9 tasks completed
 - [ ] System Integration: 0/3 tasks
 - [ ] Testing and Quality Assurance: 0/3 tasks
 - [ ] Documentation and Deployment: 0/3 tasks
 
-**Overall Progress: 24/75 tasks completed (32%)**
+**Overall Progress: 29/80 tasks completed (36%)**
 
 ## Recent Completions
+
+### 2025-01-03: Phase 3.7 Local File Storage System ✅ COMPLETE
+- ✅ FileStorageService with UUID-based file organization
+- ✅ Files stored locally: `~/.ai-mcp-toolkit/uploads/{user_id}/{year}/{month}/{uuid}.ext`
+- ✅ Download/view endpoint: `GET /resources/download/{file_id}`
+- ✅ Integration with upload pipeline (automatic file saving)
+- ✅ Dual storage: MongoDB (metadata) + Local filesystem (binary files)
+- ✅ User isolation and secure access control
+- ✅ Audit logging for all file downloads
+- ✅ Support for inline viewing (PDFs in browser)
+- ✅ Original filename preservation in metadata
+- ✅ Storage statistics API for monitoring usage
+- ✅ Fixed PDF extractor page to use backend extraction
+- 📄 See: `LOCAL_FILE_STORAGE.md` for complete documentation
 
 ### 2025-10-27: Phase 3.5 Per-User Data Storage ✅ COMPLETE
 - ✅ ConversationManager with full CRUD operations for per-user conversations
@@ -939,20 +1009,17 @@ This document outlines the comprehensive task list for enhancing the AI MCP Tool
 - `POST /conversations/{id}/messages` - Add message to conversation
 - `GET /conversations/stats/count` - Count user's conversations
 
+### API Endpoints Added (File Storage):
+- `GET /resources/download/{file_id}` - Download/view original uploaded file
+
 ## Current Focus
 
-**Current Sprint**: Phase 3.6 Server-Side Authentication Migration ✅ **COMPLETE!**
-- [x] Task 3.6.1: Create SvelteKit server hooks ✅
-- [x] Task 3.6.2: Create root layout server load ✅
-- [x] Task 3.6.3: Update root layout page component ✅
-- [x] Task 3.6.4: Update Header component for server-side auth ✅
-- [x] Task 3.6.5: Update backend auth endpoints for cookie handling ✅
-- [x] Task 3.6.6: Update login/register pages ✅
-- [x] Task 3.6.7: Add page-level auth protection ✅
-- [x] Task 3.6.8: Remove client-side auth store usage ✅
-- [x] Task 3.6.9: Update API client utilities ✅
-- [x] Task 3.6.10: Testing and validation ✅
-- [x] Task 3.6.11: Documentation and cleanup ✅
+**Previous Sprint**: Phase 3.7 Local File Storage System ✅ **COMPLETE!**
+- [x] Task 3.7.1: Create FileStorageService ✅
+- [x] Task 3.7.2: Integrate with upload pipeline ✅
+- [x] Task 3.7.3: Add file download/view endpoint ✅
+- [x] Task 3.7.4: Fix PDF extractor page ✅
+- [x] Task 3.7.5: Configuration and documentation ✅
 
 **Next Sprint**: Phase 1.2 Prompt Template System 🟡 **HIGH PRIORITY**
 
@@ -1013,5 +1080,5 @@ This document outlines the comprehensive task list for enhancing the AI MCP Tool
 
 ---
 
-*Last Updated: 2025-10-27*
+*Last Updated: 2025-01-03*
 *Next Review: Weekly or after each major task completion*

@@ -22,6 +22,7 @@
   } from 'lucide-svelte';
   import ResourceSelector from '$lib/components/ResourceSelector.svelte';
   import * as resourceAPI from '$lib/services/resources';
+  import { fetchResourceText } from '$lib/utils/resourceTextFetcher.js';
   
   let inputText = '';
   let outputText = '';
@@ -147,16 +148,9 @@
       // Fetch resource text if in resource mode
       let textToAnonymize = inputText;
       if (inputMode === 'resource') {
-        const resource = await resourceAPI.getResource(selectedResourceUri);
-        console.log('DEBUG: Resource data:', resource);
-        if (resource && resource.text) {
-          textToAnonymize = resource.text;
-          inputText = resource.text; // Update inputText for analysis
-          console.log('DEBUG: Using resource text, length:', textToAnonymize.length);
-        } else {
-          console.error('DEBUG: Resource missing text field:', resource);
-          throw new Error('Could not fetch resource content');
-        }
+        textToAnonymize = await fetchResourceText(selectedResourceUri, resourceAPI.getResource);
+        inputText = textToAnonymize; // Update inputText for analysis
+        console.log('DEBUG: Using resource content, length:', textToAnonymize.length);
       }
       
       // Use smart anonymization only when explicitly enabled (but not for strict level)

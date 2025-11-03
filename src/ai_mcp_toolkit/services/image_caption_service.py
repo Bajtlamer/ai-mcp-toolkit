@@ -40,10 +40,18 @@ class ImageCaptionService:
             vision_model: Ollama vision model (llava, moondream, bakllava)
             embedding_model: Text embedding model for caption embeddings
         """
-        self.vision_model = vision_model
-        self.embedding_model = embedding_model
+        self.vision_model = vision_model or "llava"
+        self.embedding_model = embedding_model or "nomic-embed-text"
         
-        logger.info(f"ImageCaptionService initialized: vision={vision_model}, embedding={embedding_model}")
+        # Validate models are not None
+        if not self.vision_model:
+            logger.error("Vision model is None or empty! Using default 'llava'")
+            self.vision_model = "llava"
+        if not self.embedding_model:
+            logger.error("Embedding model is None or empty! Using default 'nomic-embed-text'")
+            self.embedding_model = "nomic-embed-text"
+        
+        logger.info(f"ImageCaptionService initialized: vision={self.vision_model}, embedding={self.embedding_model}")
         logger.info(f"Tesseract available: {TESSERACT_AVAILABLE}")
     
     async def process_image(
@@ -134,7 +142,12 @@ class ImageCaptionService:
             return caption, labels
             
         except Exception as e:
-            logger.error(f"Error generating caption: {e}", exc_info=True)
+            # Check if it's a missing model error
+            error_str = str(e)
+            if 'not found' in error_str or '404' in error_str:
+                logger.warning(f"Vision model '{self.vision_model}' not installed. Install with: ollama pull {self.vision_model}")
+            else:
+                logger.error(f"Error generating caption: {e}", exc_info=True)
             return None, []
     
     def _parse_caption_response(self, response: str) -> Tuple[str, List[str]]:
@@ -208,8 +221,18 @@ class ImageCaptionService:
             Embedding vector (768 dims)
         """
         try:
+            # Ensure text is a string and not None
+            if not text or not isinstance(text, str):
+                logger.warning(f"Invalid text type for embedding: {type(text)}")
+                return []
+            
+            # Validate embedding model is set
+            if not self.embedding_model:
+                logger.error(f"Embedding model is None! Cannot generate embeddings.")
+                return []
+            
             # Truncate to avoid token limits
-            truncated_text = text[:8000]
+            truncated_text = str(text)[:8000]
             
             response = ollama.embeddings(
                 model=self.embedding_model,

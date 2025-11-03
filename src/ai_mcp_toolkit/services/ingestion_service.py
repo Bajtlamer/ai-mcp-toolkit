@@ -23,6 +23,7 @@ from ..utils.text_normalizer import (
     tokenize_for_search
 )
 from ..utils.config import Config
+from .file_storage_service import get_file_storage_service
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,10 @@ class IngestionService:
             config = Config()
         self.ocr_agent = ImageOCRAgent(config)
         
-        self.logger.info("✅ IngestionService initialized with OCR Agent and text normalization")
+        # Initialize file storage service for local file persistence
+        self.file_storage = get_file_storage_service()
+        
+        self.logger.info("✅ IngestionService initialized with OCR Agent, text normalization, and file storage")
     
     async def ingest_file(
         self,
@@ -98,13 +102,33 @@ class IngestionService:
         try:
             self.logger.info(f"Ingesting file: {filename} ({mime_type})")
             
+            # 📁 Save file to local storage FIRST (before processing)
+            # Generate UUID for file storage
+            import uuid
+            file_uuid = str(uuid.uuid4())
+            
+            storage_info = self.file_storage.save_file(
+                file_bytes=file_bytes,
+                filename=filename,
+                user_id=user_id,
+                file_id=file_uuid
+            )
+            self.logger.info(f"✅ Saved file to local storage: {storage_info['relative_path']}")
+            
             # Select processor based on MIME type
             processor = self._select_processor(mime_type, filename)
             
             # Process file
             initial_metadata = {
                 'filename': filename,
+                'original_filename': filename,  # Preserve original filename
                 'mime_type': mime_type,
+                'file_storage': {
+                    'file_id': file_uuid,
+                    'file_path': storage_info['file_path'],
+                    'relative_path': storage_info['relative_path'],
+                    'stored_at': storage_info['stored_at']
+                },
                 **(metadata or {})
             }
             
@@ -145,8 +169,9 @@ class IngestionService:
                     image_caption_data = None
             
             # Create Resource document with BOTH old (MCP) and new (search) fields
-            file_id = f"files/{datetime.utcnow().strftime('%Y/%m')}/{filename}"
-            uri = f"file:///{user_id}/{filename}"  # MCP-compatible URI
+            # Use UUID-based file_id for storage reference
+            file_id = file_uuid  # UUID from file storage
+            uri = f"file:///{user_id}/{file_uuid}"  # MCP-compatible URI with UUID
             
             # Merge user description with AI description for images:
             # - User description (if provided) + AI description

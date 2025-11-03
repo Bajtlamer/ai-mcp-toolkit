@@ -270,8 +270,10 @@ class SearchService:
                 if similarity > 0.15:  # Very low threshold for better recall on proper nouns
                     results_map[str(resource.id)] = {
                         'id': str(resource.id),
+                        'file_id': resource.file_id,
                         'file_name': resource.file_name,
                         'file_type': resource.file_type,
+                        'mime_type': resource.mime_type,
                         'summary': resource.summary,
                         'vendor': resource.vendor,
                         'score': similarity,
@@ -316,8 +318,10 @@ class SearchService:
                     # New result from chunk search
                     results_map[parent_id] = {
                         'id': parent_id,
+                        'file_id': parent.file_id,
                         'file_name': parent.file_name,
                         'file_type': parent.file_type,
+                        'mime_type': parent.mime_type,
                         'summary': parent.summary,
                         'vendor': parent.vendor,
                         'score': chunk_match['score'],
@@ -646,8 +650,10 @@ class SearchService:
             if parent:
                 results.append({
                     'id': str(parent.id),
+                    'file_id': parent.file_id,
                     'file_name': parent.file_name,
                     'file_type': parent.file_type,
+                    'mime_type': parent.mime_type,
                     'summary': parent.summary,
                     'vendor': parent.vendor,
                     'score': chunk_match['score'],
@@ -672,8 +678,10 @@ class SearchService:
                 for resource in resources:
                     results.append({
                         'id': str(resource.id),
+                        'file_id': resource.file_id,
                         'file_name': resource.file_name,
                         'file_type': resource.file_type,
+                        'mime_type': resource.mime_type,
                         'summary': resource.summary,
                         'vendor': resource.vendor,
                         'score': 1.0,  # Exact match
@@ -699,8 +707,10 @@ class SearchService:
                         for resource in resources:
                             results.append({
                                 'id': str(resource.id),
+                                'file_id': resource.file_id,
                                 'file_name': resource.file_name,
                                 'file_type': resource.file_type,
+                                'mime_type': resource.mime_type,
                                 'summary': resource.summary,
                                 'vendor': resource.vendor,
                                 'score': category.match_score,
@@ -721,8 +731,10 @@ class SearchService:
                         for resource in resources:
                             results.append({
                                 'id': str(resource.id),
+                                'file_id': resource.file_id,
                                 'file_name': resource.file_name,
                                 'file_type': resource.file_type,
+                                'mime_type': resource.mime_type,
                                 'summary': resource.summary,
                                 'vendor': resource.vendor,
                                 'score': category.match_score,
@@ -746,8 +758,10 @@ class SearchService:
                             if hasattr(resource, 'amounts_cents') and resource.amounts_cents:
                                 results.append({
                                     'id': str(resource.id),
+                                    'file_id': resource.file_id,
                                     'file_name': resource.file_name,
                                     'file_type': resource.file_type,
+                                    'mime_type': resource.mime_type,
                                     'summary': resource.summary,
                                     'vendor': resource.vendor,
                                     'score': category.match_score,

@@ -179,6 +179,8 @@ class Resource(Document):
     file_id: Optional[str] = None  # Unique file identifier (e.g., "files/2025/10/INV-1234.pdf")
     file_name: Optional[str] = None  # Original filename
     file_type: Optional[str] = None  # "pdf", "text", "csv", "image", "structured"
+    file_path: Optional[str] = None  # Physical file path on disk for re-processing
+    file_data_base64: Optional[str] = None  # Base64 encoded file content for small files
     
     # === NEW: Multi-tenant / ACL ===
     company_id: Optional[str] = None  # For tenant isolation (defaults to owner_id)

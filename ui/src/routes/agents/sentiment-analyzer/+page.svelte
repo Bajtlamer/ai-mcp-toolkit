@@ -2,6 +2,7 @@
   import { Heart, Play, Download, Wand2, ArrowRight, RotateCcw, Database } from 'lucide-svelte';
   import ResourceSelector from '$lib/components/ResourceSelector.svelte';
   import * as resourceAPI from '$lib/services/resources';
+  import { fetchResourceText } from '$lib/utils/resourceTextFetcher.js';
 
   let inputText = '';
   let sentimentResult = null;
@@ -48,12 +49,7 @@
       let textToAnalyze = inputText;
       
       if (inputMode === 'resource') {
-        const resource = await resourceAPI.getResource(selectedResourceUri);
-        if (resource && resource.text) {
-          textToAnalyze = resource.text;
-        } else {
-          throw new Error('Could not fetch resource content');
-        }
+        textToAnalyze = await fetchResourceText(selectedResourceUri, resourceAPI.getResource);
       }
       
       const response = await fetch('/api/tools/execute', {

@@ -2,6 +2,7 @@
   import { Languages, Play, Download, Database } from 'lucide-svelte';
   import ResourceSelector from '$lib/components/ResourceSelector.svelte';
   import * as resourceAPI from '$lib/services/resources';
+  import { fetchResourceText } from '$lib/utils/resourceTextFetcher.js';
 
   let inputText = '';
   let detectionResult = null;
@@ -34,12 +35,7 @@
       let textToDetect = inputText;
       
       if (inputMode === 'resource') {
-        const resource = await resourceAPI.getResource(selectedResourceUri);
-        if (resource && resource.text) {
-          textToDetect = resource.text;
-        } else {
-          throw new Error('Could not fetch resource content');
-        }
+        textToDetect = await fetchResourceText(selectedResourceUri, resourceAPI.getResource);
       }
       
       const response = await fetch('/api/tools/execute', {

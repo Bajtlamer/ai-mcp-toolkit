@@ -31,6 +31,7 @@ from ..models.database import db_manager
 from ..utils.audit import AuditLogger
 from ..services.ingestion_service import get_ingestion_service
 from ..services.search_service import get_search_service
+from ..services.file_storage_service import get_file_storage_service
 
 logger = get_logger(__name__)
 
@@ -1307,6 +1308,97 @@ class HTTPServer:
                 self.logger.error(f"Error uploading file (v2): {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
         
+        @app.get("/resources/download/{file_id}")
+        async def download_file(
+            file_id: str,
+            user: User = Depends(require_auth)
+        ):
+            """
+            Download/view a file from local storage.
+            
+            This endpoint retrieves the original uploaded file by its UUID file_id.
+            Used for:
+            - Viewing PDFs in browser
+            - Downloading original files
+            - Displaying images from search results
+            
+            Args:
+                file_id: UUID of the file (from resource.file_id)
+                
+            Returns:
+                StreamingResponse with file content and appropriate headers
+            """
+            try:
+                # Get resource to verify ownership and get metadata
+                resource = await Resource.find_one(Resource.file_id == file_id)
+                
+                if not resource:
+                    raise HTTPException(status_code=404, detail="Resource not found")
+                
+                # Check ownership (admins can download any file)
+                is_admin = user.role == UserRole.ADMIN
+                if not is_admin and resource.owner_id != str(user.id):
+                    raise HTTPException(status_code=403, detail="Access denied")
+                
+                # Get file from storage
+                file_storage = get_file_storage_service()
+                file_bytes = file_storage.get_file(
+                    file_id=file_id,
+                    user_id=resource.owner_id
+                )
+                
+                if not file_bytes:
+                    raise HTTPException(
+                        status_code=404,
+                        detail="File not found in storage. It may have been deleted."
+                    )
+                
+                # Determine MIME type from resource
+                mime_type = resource.mime_type or "application/octet-stream"
+                
+                # Get original filename from metadata or use file_name
+                original_filename = resource.file_name
+                if resource.metadata and 'original_filename' in resource.metadata:
+                    original_filename = resource.metadata['original_filename']
+                
+                self.logger.info(
+                    f"User {user.username} downloading file: {file_id} "
+                    f"({original_filename}, {len(file_bytes)} bytes)"
+                )
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="resource.download",
+                    method="GET",
+                    endpoint=f"/resources/download/{file_id}",
+                    status_code=200,
+                    resource_type="file",
+                    resource_id=str(resource.id),
+                    request_data={'file_id': file_id}
+                )
+                
+                # Return file with appropriate headers
+                # Use RFC 5987 encoding for non-ASCII filenames
+                from urllib.parse import quote
+                encoded_filename = quote(original_filename)
+                
+                return StreamingResponse(
+                    io.BytesIO(file_bytes),
+                    media_type=mime_type,
+                    headers={
+                        "Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}",
+                        "Content-Length": str(len(file_bytes)),
+                        "Cache-Control": "public, max-age=3600"
+                    }
+                )
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error downloading file {file_id}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
         @app.post("/resources/snippet", status_code=201)
         async def create_snippet(
             text: str = Form(...),
@@ -1785,20 +1877,43 @@ class HTTPServer:
         
         @app.get("/resources/{uri:path}", response_model=Dict[str, Any])
         async def get_resource(uri: str, user: User = Depends(require_auth)):
-            """Get a specific resource by URI (ownership checked)."""
+            """Get a specific resource by URI (ownership checked) - returns full resource data."""
             try:
-                is_admin = user.role == UserRole.ADMIN
-                result = await self.resource_manager.read_resource(
-                    uri,
-                    user_id=str(user.id),
-                    is_admin=is_admin
-                )
+                # Find resource directly from database to get all fields
+                resource = await Resource.find_one(Resource.uri == uri)
                 
-                if not result.contents:
+                if not resource:
+                    raise HTTPException(status_code=404, detail=f"Resource not found: {uri}")
+                
+                # Ownership check
+                is_admin = user.role == UserRole.ADMIN
+                if not is_admin and resource.owner_id != str(user.id):
                     raise HTTPException(status_code=404, detail=f"Resource not found: {uri}")
                 
                 self.logger.info(f"Retrieved resource: {uri}")
-                return result.contents[0]
+                
+                # Return full resource data as dict
+                resource_dict = {
+                    "id": str(resource.id),
+                    "uri": resource.uri,
+                    "name": resource.name,
+                    "description": resource.description,
+                    "mimeType": resource.mime_type,
+                    "mime_type": resource.mime_type,
+                    "resource_type": resource.resource_type.value if resource.resource_type else None,
+                    "content": resource.content,
+                    "summary": resource.summary,
+                    "file_id": resource.file_id,
+                    "file_name": resource.file_name,
+                    "file_type": resource.file_type,
+                    "owner_id": resource.owner_id,
+                    "company_id": resource.company_id,
+                    "tags": resource.tags or [],
+                    "created_at": resource.created_at.isoformat() if resource.created_at else None,
+                    "updated_at": resource.updated_at.isoformat() if resource.updated_at else None,
+                }
+                
+                return resource_dict
                 
             except ValueError as e:
                 raise HTTPException(status_code=404, detail=str(e))
@@ -1855,9 +1970,11 @@ class HTTPServer:
         
         @app.put("/resources/{uri:path}", response_model=ResourceResponse)
         async def update_resource(uri: str, request: ResourceUpdate, user: User = Depends(require_auth)):
-            """Update an existing resource (ownership checked)."""
+            """Update an existing resource with automatic reindexing."""
             try:
                 is_admin = user.role == UserRole.ADMIN
+                
+                # Update resource in MongoDB
                 resource = await self.resource_manager.update_resource(
                     uri=uri,
                     user_id=str(user.id),
@@ -1868,7 +1985,33 @@ class HTTPServer:
                     metadata=request.metadata
                 )
                 
-                self.logger.info(f"Updated resource: {uri}")
+                # ✨ Trigger background reindexing after update
+                # This updates: embeddings, chunks, Redis suggestions
+                from ..services.resource_event_service import get_resource_event_service
+                event_service = get_resource_event_service()
+                asyncio.create_task(
+                    event_service.on_resource_updated(resource)
+                )
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="resource.update",
+                    method="PUT",
+                    endpoint=f"/resources/{uri}",
+                    status_code=200,
+                    resource_type="resource",
+                    resource_id=str(resource.id),
+                    request_data={
+                        'name': request.name,
+                        'description': request.description,
+                        'content_updated': request.content is not None
+                    }
+                )
+                
+                self.logger.info(
+                    f"✅ Updated resource: {uri} (reindexing triggered in background)"
+                )
                 
                 return ResourceResponse(
                     id=str(resource.id),
@@ -1891,15 +2034,74 @@ class HTTPServer:
         
         @app.delete("/resources/{uri:path}", status_code=204)
         async def delete_resource(uri: str, user: User = Depends(require_auth)):
-            """Delete a resource (ownership checked)."""
+            """Delete a resource (ownership checked) with full cleanup."""
             try:
                 is_admin = user.role == UserRole.ADMIN
+                
+                # Get resource before deletion to access file_id and metadata
+                resource = await Resource.find_one(Resource.uri == uri)
+                if not resource:
+                    raise HTTPException(status_code=404, detail="Resource not found")
+                
+                # Check ownership
+                if not is_admin and resource.owner_id != str(user.id):
+                    raise HTTPException(status_code=403, detail="Access denied")
+                
+                resource_id = str(resource.id)
+                file_id = resource.file_id
+                company_id = resource.company_id or resource.owner_id
+                
+                # 1. Delete from MongoDB (resource + chunks)
                 await self.resource_manager.delete_resource(
                     uri,
                     user_id=str(user.id),
                     is_admin=is_admin
                 )
-                self.logger.info(f"Deleted resource: {uri}")
+                
+                # 2. Delete local file from storage
+                if file_id:
+                    try:
+                        file_storage = get_file_storage_service()
+                        deleted = file_storage.delete_file(file_id, resource.owner_id)
+                        if deleted:
+                            self.logger.info(f"✅ Deleted local file: {file_id}")
+                        else:
+                            self.logger.warning(f"⚠️ Local file not found: {file_id}")
+                    except Exception as e:
+                        self.logger.error(f"❌ Error deleting local file {file_id}: {e}")
+                
+                # 3. Delete all associated chunks
+                try:
+                    chunks_deleted = await ResourceChunk.find(
+                        ResourceChunk.parent_id == resource.id
+                    ).delete()
+                    self.logger.info(f"✅ Deleted {chunks_deleted.deleted_count} chunks for resource {uri}")
+                except Exception as e:
+                    self.logger.error(f"❌ Error deleting chunks: {e}")
+                
+                # 4. Remove from Redis suggestions (note: currently no-op, but calling for completeness)
+                try:
+                    from ..services.suggestion_service import SuggestionService
+                    suggestion_service = SuggestionService()
+                    await suggestion_service.remove_resource_suggestions(resource_id, company_id)
+                except Exception as e:
+                    self.logger.error(f"❌ Error removing Redis suggestions: {e}")
+                
+                # Log audit event
+                await AuditLogger.log(
+                    user=user,
+                    action="resource.delete",
+                    method="DELETE",
+                    endpoint=f"/resources/{uri}",
+                    status_code=204,
+                    resource_type="resource",
+                    resource_id=resource_id,
+                    request_data={'uri': uri, 'file_id': file_id}
+                )
+                
+                self.logger.info(
+                    f"✅ FULL DELETE COMPLETE: {uri} (resource + chunks + file + suggestions)"
+                )
                 return None
                 
             except ValueError as e:
@@ -2698,6 +2900,20 @@ class HTTPServer:
                 await self.initialize()
             
             self.logger.info(f"Starting HTTP server on {host}:{port}")
+            
+            # Filter out health check endpoints from access logs
+            class HealthCheckFilter(logging.Filter):
+                def filter(self, record: logging.LogRecord) -> bool:
+                    # Suppress logs for health check endpoints
+                    return not any([
+                        '/auth/me' in record.getMessage(),
+                        '/gpu/health' in record.getMessage(),
+                        '/model/current' in record.getMessage(),
+                        '/health' in record.getMessage()
+                    ])
+            
+            # Apply filter to uvicorn access logger
+            logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
             
             config = uvicorn.Config(
                 app=self.app,

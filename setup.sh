@@ -533,6 +533,25 @@ setup_ollama() {
             echo -e "${GREEN}✓ Model downloaded${NC}"
         fi
         
+        # Check and download embedding model (required)
+        if ollama list | grep -q "nomic-embed-text"; then
+            echo -e "${GREEN}✓ Embedding model (nomic-embed-text) is already available${NC}"
+        else
+            echo -e "${YELLOW}Downloading embedding model: nomic-embed-text...${NC}"
+            ollama pull nomic-embed-text
+            echo -e "${GREEN}✓ Embedding model downloaded${NC}"
+        fi
+        
+        # Check and download vision model (optional but recommended for image features)
+        if ollama list | grep -q "llava"; then
+            echo -e "${GREEN}✓ Vision model (llava) is already available${NC}"
+        else
+            echo -e "${YELLOW}Downloading vision model for image captioning: llava...${NC}"
+            echo -e "${CYAN}Note: This is optional but enables image search features (4.7GB)${NC}"
+            ollama pull llava
+            echo -e "${GREEN}✓ Vision model downloaded${NC}"
+        fi
+        
         # Test the model
         echo -e "${CYAN}Testing model...${NC}"
         if echo "Hello" | ollama run "$OLLAMA_MODEL" > /dev/null 2>&1; then

@@ -123,8 +123,10 @@ pip install -e .
 # On macOS/Linux
 curl -fsSL https://ollama.ai/install.sh | sh
 
-# Pull a recommended model
-ollama pull llama3.2:3b
+# Pull required models
+ollama pull llama3.2:3b           # Main language model
+ollama pull nomic-embed-text       # Embedding model (required)
+ollama pull llava                  # Vision model (optional, 4.7GB, enables image features)
 ```
 
 #### Step 3: Configure the System

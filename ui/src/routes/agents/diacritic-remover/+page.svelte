@@ -1,7 +1,8 @@
 <script>
-  import { Type, Play, Copy, Download, Database } from 'lucide-svelte';
+  import { Type, Play, Copy, Download, Database, X } from 'lucide-svelte';
   import ResourceSelector from '$lib/components/ResourceSelector.svelte';
   import * as resourceAPI from '$lib/services/resources';
+  import { fetchResourceText } from '$lib/utils/resourceTextFetcher.js';
 
   let inputText = '';
   let outputText = '';
@@ -29,12 +30,7 @@
       let textToProcess = inputText;
       
       if (inputMode === 'resource') {
-        const resource = await resourceAPI.getResource(selectedResourceUri);
-        if (resource && resource.text) {
-          textToProcess = resource.text;
-        } else {
-          throw new Error('Could not fetch resource content');
-        }
+        textToProcess = await fetchResourceText(selectedResourceUri, resourceAPI.getResource);
       }
       
       const response = await fetch('/api/tools/execute', {
@@ -82,6 +78,11 @@
     a.download = 'text_without_diacritics.txt';
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function clearText() {
+    outputText = '';
+    error = null;
   }
 </script>
 
@@ -188,6 +189,13 @@
         {#if outputText}
           <div class="flex space-x-2">
             <button
+              on:click={clearText}
+              class="flex items-center px-3 py-1 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md transition-colors"
+            >
+              <X size={14} class="mr-1" />
+              Clear
+            </button>
+            <button
               on:click={copyToClipboard}
               class="flex items-center px-3 py-1 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md transition-colors"
             >
@@ -205,19 +213,25 @@
         {/if}
       </div>
       
-      <div class="flex-1 w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800 overflow-y-auto">
-        {#if error}
+      {#if error}
+        <div class="flex-1 w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800">
           <div class="text-red-600 dark:text-red-400">
             <strong>Error:</strong> {error}
           </div>
-        {:else if outputText}
-          <pre class="text-gray-900 dark:text-white whitespace-pre-wrap font-mono text-sm">{outputText}</pre>
-        {:else}
+        </div>
+      {:else if outputText}
+        <textarea
+          bind:value={outputText}
+          class="flex-1 min-h-0 w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm font-mono resize-none focus:ring-2 focus:ring-purple-500 focus:border-transparent mt-4"
+          readonly
+        ></textarea>
+      {:else}
+        <div class="flex-1 w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800">
           <p class="text-gray-500 dark:text-gray-400 italic">
             Text without diacritical marks will appear here...
           </p>
-        {/if}
-      </div>
+        </div>
+      {/if}
     </div>
   </div>
 

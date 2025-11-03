@@ -1,5 +1,5 @@
 <script>
-  import { FileText, Play, Copy, Download, Database, Upload } from 'lucide-svelte';
+import { FileText, Play, Copy, Download, Database, Upload, X } from 'lucide-svelte';
   import ResourceSelector from '$lib/components/ResourceSelector.svelte';
   import * as resourceAPI from '$lib/services/resources';
 
@@ -31,27 +31,80 @@
         const binaryString = bytes.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
         pdfContent = btoa(binaryString);
       } else {
-        // Fetch PDF resource content
-        const resource = await resourceAPI.getResource(selectedResourceUri);
-        if (resource && resource.text) {
-          // Resource already has extracted text
-          outputText = resource.text;
+        // Fetch PDF resource through backend API which extracts text automatically
+        const response = await fetch(`/api/resources/${encodeURIComponent(selectedResourceUri)}`);
+        
+        if (!response.ok) {
+          error = `Failed to fetch resource: ${response.statusText}`;
           isProcessing = false;
           return;
+        }
+        
+        const resourceData = await response.json();
+        console.log('Resource API response:', resourceData); // Debug
+        
+        // Backend returns flat resource object with content field
+        if (resourceData.content) {
+          const content = resourceData.content;
+          
+          // Check if content is already extracted text or needs to be fetched
+          if (content.startsWith('[PDF file:') || content.startsWith('[Error extracting') || content.startsWith('[No text content')) {
+            // This is a status message - need to fetch PDF file using file_id
+            if (resourceData.file_id) {
+              // Download the actual PDF file
+              const downloadResponse = await fetch(`/api/resources/download/${resourceData.file_id}`);
+              if (!downloadResponse.ok) {
+                error = `Failed to download PDF file: ${downloadResponse.statusText}`;
+                isProcessing = false;
+                return;
+              }
+              
+              // Convert to base64
+              const arrayBuffer = await downloadResponse.arrayBuffer();
+              const bytes = new Uint8Array(arrayBuffer);
+              const binaryString = bytes.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
+              pdfContent = btoa(binaryString);
+            } else {
+              error = 'PDF file not available for this resource';
+              isProcessing = false;
+              return;
+            }
+          } else if (content.includes('--- Page')) {
+            // Backend already extracted the text! Use it directly
+            outputText = content;
+            isProcessing = false;
+            return;
+          } else {
+            // Assume it's base64 PDF content
+            pdfContent = content;
+          }
+        } else if (resourceData.file_id) {
+          // No content field - try to download the file directly
+          const downloadResponse = await fetch(`/api/resources/download/${resourceData.file_id}`);
+          if (!downloadResponse.ok) {
+            error = `Failed to download PDF file: ${downloadResponse.statusText}`;
+            isProcessing = false;
+            return;
+          }
+          
+          // Convert to base64
+          const arrayBuffer = await downloadResponse.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          const binaryString = bytes.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
+          pdfContent = btoa(binaryString);
         } else {
-          error = 'Could not fetch PDF content from resource';
+          error = 'Resource does not contain PDF content or file reference';
           isProcessing = false;
           return;
         }
       }
 
-      // Call the PDF extraction tool
-      const response = await fetch('http://localhost:8000/tools/execute', {
+      // Call the PDF extraction tool via server endpoint
+      const response = await fetch('/api/tools/execute', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
         body: JSON.stringify({
           name: 'extract_pdf_text',
           arguments: {
@@ -102,6 +155,11 @@
     a.download = 'extracted_text.txt';
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function clearText() {
+    outputText = '';
+    error = null;
   }
 
   function handleDragEnter(event) {
@@ -227,11 +285,11 @@
                   PDF files up to 10MB
                 </p>
                 {#if selectedFile}
-                  <div class="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                  <div class="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
                     <div class="flex items-center justify-center gap-2">
-                      <FileText size={16} class="text-red-600 dark:text-red-400" />
-                      <span class="text-sm text-red-900 dark:text-red-100 font-medium">{selectedFile.name}</span>
-                      <span class="text-xs text-red-600 dark:text-red-400">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
+                      <FileText size={16} class="text-green-600 dark:text-green-400" />
+                      <span class="text-sm text-green-900 dark:text-green-100 font-medium">{selectedFile.name}</span>
+                      <span class="text-xs text-green-600 dark:text-green-400">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
                     </div>
                   </div>
                 {/if}
@@ -308,6 +366,13 @@
         {#if outputText}
           <div class="flex space-x-2">
             <button
+              on:click={clearText}
+              class="flex items-center px-3 py-1 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md transition-colors"
+            >
+              <X size={14} class="mr-1" />
+              Clear
+            </button>
+            <button
               on:click={copyToClipboard}
               class="flex items-center px-3 py-1 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md transition-colors"
             >
@@ -326,19 +391,25 @@
       </div>
 
       <!-- Output Content Area -->
-      <div class="flex-1 min-h-0 w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800 overflow-y-auto overflow-x-hidden">
-        {#if error}
+      {#if error}
+        <div class="flex-1 min-h-0 w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800">
           <div class="text-red-600 dark:text-red-400">
             <strong>Error:</strong> {error}
           </div>
-        {:else if outputText}
-          <pre class="text-gray-900 dark:text-white whitespace-pre-wrap text-sm font-mono break-words">{outputText}</pre>
-        {:else}
+        </div>
+      {:else if outputText}
+        <textarea
+          bind:value={outputText}
+          class="flex-1 min-h-0 w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm font-mono resize-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+          readonly
+        ></textarea>
+      {:else}
+        <div class="flex-1 min-h-0 w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800">
           <p class="text-gray-500 dark:text-gray-400 italic">
             Extracted text will appear here...
           </p>
-        {/if}
-      </div>
+        </div>
+      {/if}
     </div>
   </div>
 
