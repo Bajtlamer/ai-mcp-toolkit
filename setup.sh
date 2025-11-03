@@ -382,6 +382,13 @@ EOF
 apply_configuration() {
     echo -e "${CYAN}⚙️  Applying platform-specific configuration...${NC}"
     
+    # Check if .env already exists
+    if [[ -f ".env" ]]; then
+        echo -e "${GREEN}✓ Existing .env file found - preserving it${NC}"
+        echo -e "${YELLOW}   If you want to regenerate it, delete .env and run setup again${NC}"
+        return 0
+    fi
+    
     # Determine which template to use
     TEMPLATE_FILE="configs/templates/.env.$CONFIG_SUFFIX"
     
@@ -390,20 +397,27 @@ apply_configuration() {
         TEMPLATE_FILE="configs/templates/.env.cpu"
     fi
     
-    # Copy template to .env
-    cp "$TEMPLATE_FILE" .env
-    
-    # Update the model in the .env file
-    if [[ "$PLATFORM" == "macos" ]]; then
-        sed -i '' "s/OLLAMA_MODEL=.*/OLLAMA_MODEL=$OLLAMA_MODEL/" .env
+    # Create .env from .env.example if it exists, otherwise from template
+    if [[ -f ".env.example" ]]; then
+        echo -e "${CYAN}Creating .env from .env.example...${NC}"
+        cp .env.example .env
+        echo -e "${GREEN}✓ .env created from .env.example${NC}"
     else
-        sed -i "s/OLLAMA_MODEL=.*/OLLAMA_MODEL=$OLLAMA_MODEL/" .env
+        echo -e "${CYAN}Creating .env from template...${NC}"
+        cp "$TEMPLATE_FILE" .env
+        
+        # Update the model in the .env file
+        if [[ "$PLATFORM" == "macos" ]]; then
+            sed -i '' "s/OLLAMA_MODEL=.*/OLLAMA_MODEL=$OLLAMA_MODEL/" .env
+        else
+            sed -i "s/OLLAMA_MODEL=.*/OLLAMA_MODEL=$OLLAMA_MODEL/" .env
+        fi
+        
+        echo -e "${GREEN}✓ Configuration applied: .env (based on $TEMPLATE_FILE)${NC}"
     fi
     
-    echo -e "${GREEN}✓ Configuration applied: .env (based on $TEMPLATE_FILE)${NC}"
-    
-    # Backup original example
-    if [[ ! -f ".env.example.backup" ]]; then
+    # Backup original example if it doesn't exist
+    if [[ -f ".env.example" ]] && [[ ! -f ".env.example.backup" ]]; then
         cp .env.example .env.example.backup
         echo -e "${GREEN}✓ Original .env.example backed up${NC}"
     fi
@@ -436,6 +450,41 @@ install_dependencies() {
         source venv/bin/activate
     fi
     echo -e "${GREEN}✓ Virtual environment activated${NC}"
+    
+    # Install Tesseract OCR (system dependency)
+    echo -e "${BLUE}Installing Tesseract OCR...${NC}"
+    if [[ "$PLATFORM" == "macos" ]]; then
+        if command -v brew &> /dev/null; then
+            if ! command -v tesseract &> /dev/null; then
+                brew install tesseract
+                echo -e "${GREEN}✓ Tesseract OCR installed${NC}"
+            else
+                echo -e "${YELLOW}Tesseract OCR already installed${NC}"
+            fi
+        else
+            echo -e "${YELLOW}⚠️  Homebrew not found. Please install Tesseract manually: brew install tesseract${NC}"
+        fi
+    elif [[ "$PLATFORM" == "linux" ]]; then
+        if command -v apt-get &> /dev/null; then
+            if ! command -v tesseract &> /dev/null; then
+                echo -e "${YELLOW}Installing Tesseract OCR (requires sudo)...${NC}"
+                sudo apt-get update && sudo apt-get install -y tesseract-ocr
+                echo -e "${GREEN}✓ Tesseract OCR installed${NC}"
+            else
+                echo -e "${YELLOW}Tesseract OCR already installed${NC}"
+            fi
+        elif command -v yum &> /dev/null; then
+            if ! command -v tesseract &> /dev/null; then
+                echo -e "${YELLOW}Installing Tesseract OCR (requires sudo)...${NC}"
+                sudo yum install -y tesseract
+                echo -e "${GREEN}✓ Tesseract OCR installed${NC}"
+            else
+                echo -e "${YELLOW}Tesseract OCR already installed${NC}"
+            fi
+        else
+            echo -e "${YELLOW}⚠️  Package manager not found. Please install Tesseract manually${NC}"
+        fi
+    fi
     
     # Install Python dependencies
     echo -e "${BLUE}Installing Python dependencies...${NC}"

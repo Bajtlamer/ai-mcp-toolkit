@@ -34,6 +34,7 @@ python-dotenv>=1.0.0
 pypdf>=4.0.0  # PDF text extraction
 sentence-transformers>=2.2.0  # Vector embeddings for semantic search
 Pillow>=10.0.0  # Image processing
+pytesseract>=0.3.10  # OCR text extraction from images
 
 # MongoDB dependencies
 motor>=3.3.0
