@@ -1,8 +1,7 @@
 /**
  * API service for conversation management
+ * All requests go through SvelteKit server endpoints for proper authentication
  */
-
-const API_BASE_URL = 'http://localhost:8000';
 
 /**
  * List all conversations for the authenticated user
@@ -12,10 +11,9 @@ const API_BASE_URL = 'http://localhost:8000';
  */
 export async function listConversations(limit = 100, offset = 0) {
 	const response = await fetch(
-		`${API_BASE_URL}/conversations?limit=${limit}&offset=${offset}`,
+		`/api/conversations?limit=${limit}&offset=${offset}`,
 		{
 			method: 'GET',
-			credentials: 'include',
 			headers: {
 				'Content-Type': 'application/json'
 			}
@@ -37,10 +35,9 @@ export async function listConversations(limit = 100, offset = 0) {
  */
 export async function getConversation(conversationId) {
 	const response = await fetch(
-		`${API_BASE_URL}/conversations/${conversationId}`,
+		`/api/conversations/${conversationId}`,
 		{
 			method: 'GET',
-			credentials: 'include',
 			headers: {
 				'Content-Type': 'application/json'
 			}
@@ -64,10 +61,9 @@ export async function getConversation(conversationId) {
  */
 export async function createConversation(title = 'New Conversation', messages = [], metadata = {}) {
 	const response = await fetch(
-		`${API_BASE_URL}/conversations`,
+		`/api/conversations`,
 		{
 			method: 'POST',
-			credentials: 'include',
 			headers: {
 				'Content-Type': 'application/json'
 			},
@@ -95,10 +91,9 @@ export async function createConversation(title = 'New Conversation', messages = 
  */
 export async function updateConversation(conversationId, updates) {
 	const response = await fetch(
-		`${API_BASE_URL}/conversations/${conversationId}`,
+		`/api/conversations/${conversationId}`,
 		{
 			method: 'PUT',
-			credentials: 'include',
 			headers: {
 				'Content-Type': 'application/json'
 			},
@@ -121,10 +116,9 @@ export async function updateConversation(conversationId, updates) {
  */
 export async function deleteConversation(conversationId) {
 	const response = await fetch(
-		`${API_BASE_URL}/conversations/${conversationId}`,
+		`/api/conversations/${conversationId}`,
 		{
 			method: 'DELETE',
-			credentials: 'include',
 			headers: {
 				'Content-Type': 'application/json'
 			}
@@ -145,10 +139,9 @@ export async function deleteConversation(conversationId) {
  */
 export async function addMessage(conversationId, message) {
 	const response = await fetch(
-		`${API_BASE_URL}/conversations/${conversationId}/messages`,
+		`/api/conversations/${conversationId}/messages`,
 		{
 			method: 'POST',
-			credentials: 'include',
 			headers: {
 				'Content-Type': 'application/json'
 			},
@@ -170,10 +163,9 @@ export async function addMessage(conversationId, message) {
  */
 export async function getConversationCount() {
 	const response = await fetch(
-		`${API_BASE_URL}/conversations/stats/count`,
+		`/api/conversations/stats/count`,
 		{
 			method: 'GET',
-			credentials: 'include',
 			headers: {
 				'Content-Type': 'application/json'
 			}

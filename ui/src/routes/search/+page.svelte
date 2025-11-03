@@ -18,7 +18,7 @@
     CreditCard
   } from 'lucide-svelte';
   import toast from 'svelte-french-toast';
-  import { compoundSearch } from '$lib/api/search';
+  import { compoundSearch, getSearchSuggestions } from '$lib/api/search';
   
   let query = '';
   let results = [];
@@ -87,16 +87,9 @@
     
     try {
       loadingSuggestions = true;
-      const response = await fetch(
-        `http://localhost:8000/search/suggestions?q=${encodeURIComponent(q)}&limit=10`,
-        { credentials: 'include' }
-      );
-      
-      if (response.ok) {
-        suggestions = await response.json();
-        showSuggestions = suggestions.length > 0;
-        selectedSuggestionIndex = -1;
-      }
+      suggestions = await getSearchSuggestions(q, 10);
+      showSuggestions = suggestions.length > 0;
+      selectedSuggestionIndex = -1;
     } catch (err) {
       console.error('Error fetching suggestions:', err);
       suggestions = [];
@@ -218,15 +211,14 @@
       }
       formData.append('tags', uploadTags);
       
-      const response = await fetch('http://localhost:8000/resources/upload', {
+      const response = await fetch('/api/resources/upload', {
         method: 'POST',
         body: formData,
-        credentials: 'include'
       });
       
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Upload failed');
+        throw new Error(errorData.error || 'Upload failed');
       }
       
       const data = await response.json();
@@ -261,15 +253,14 @@
       formData.append('tags', snippetTags);
       formData.append('snippet_source', snippetSource);
       
-      const response = await fetch('http://localhost:8000/resources/snippet', {
+      const response = await fetch('/api/resources/snippet', {
         method: 'POST',
         body: formData,
-        credentials: 'include'
       });
       
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Save failed');
+        throw new Error(errorData.error || 'Save failed');
       }
       
       toast.success(`Snippet saved: ${snippetTitle}`);

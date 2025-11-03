@@ -399,13 +399,11 @@ class Conversation(Document):
     
     user_id: Indexed(str)  # Owner of the conversation
     title: str
-    description: Optional[str] = None
     messages: List[Dict[str, Any]] = Field(default_factory=list)  # Store messages directly
-    participants: List[str] = Field(default_factory=list)
     status: str = "active"
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    metadata: Dict[str, Any] = Field(default_factory=dict)  # thinking_times, response_count, etc.
+    metadata: Dict[str, Any] = Field(default_factory=dict)  # total_time, total_tokens, avg_tokens_per_second, etc.
     
     class Settings:
         name = "conversations"
@@ -414,7 +412,6 @@ class Conversation(Document):
             "title",
             "status",
             "created_at",
-            "participants",
             [("user_id", 1), ("created_at", -1)],
             [("status", 1), ("created_at", -1)],
         ]

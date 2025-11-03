@@ -252,6 +252,42 @@ class ConversationManager:
             
             conversation.messages.append(message)
             conversation.updated_at = datetime.utcnow()
+            
+            # Aggregate metrics if present
+            if message.get('metrics'):
+                metrics = message['metrics']
+                metadata = conversation.metadata or {}
+                
+                # Initialize aggregated metrics if not present
+                if 'total_time' not in metadata:
+                    metadata['total_time'] = 0
+                if 'total_tokens' not in metadata:
+                    metadata['total_tokens'] = 0
+                if 'prompt_tokens' not in metadata:
+                    metadata['prompt_tokens'] = 0
+                if 'completion_tokens' not in metadata:
+                    metadata['completion_tokens'] = 0
+                if 'response_count' not in metadata:
+                    metadata['response_count'] = 0
+                
+                # Aggregate metrics
+                if 'totalTime' in metrics:
+                    metadata['total_time'] += metrics['totalTime']
+                if 'totalTokens' in metrics:
+                    metadata['total_tokens'] += metrics['totalTokens']
+                if 'promptTokens' in metrics:
+                    metadata['prompt_tokens'] += metrics['promptTokens']
+                if 'completionTokens' in metrics:
+                    metadata['completion_tokens'] += metrics['completionTokens']
+                
+                metadata['response_count'] += 1
+                
+                # Calculate average tokens per second
+                if metadata['total_time'] > 0 and metadata['total_tokens'] > 0:
+                    metadata['avg_tokens_per_second'] = metadata['total_tokens'] / metadata['total_time']
+                
+                conversation.metadata = metadata
+            
             await conversation.save()
             
             self.logger.info(f"Added message to conversation {conversation_id}")

@@ -1,8 +1,7 @@
 /**
  * Search API service for compound search
+ * All requests go through SvelteKit server endpoints for proper authentication
  */
-
-const API_BASE = 'http://localhost:8000';
 
 /**
  * Perform compound search with automatic query analysis
@@ -11,12 +10,11 @@ const API_BASE = 'http://localhost:8000';
  * @returns {Promise<Object>} Search results with analysis and match types
  */
 export async function compoundSearch(query, limit = 30) {
-  const response = await fetch(`${API_BASE}/resources/compound-search`, {
+  const response = await fetch('/api/search', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    credentials: 'include',
     body: JSON.stringify({ query, limit }),
   });
   
@@ -29,18 +27,19 @@ export async function compoundSearch(query, limit = 30) {
 }
 
 /**
- * Legacy search endpoint (kept for backward compatibility)
- * @deprecated Use compoundSearch instead
+ * Get search suggestions
+ * @param {string} query - Partial search query
+ * @param {number} limit - Maximum suggestions to return (default: 10)
+ * @returns {Promise<Array>} Array of suggestions
  */
-export async function legacySearch(query, searchType = 'auto', limit = 20) {
+export async function getSearchSuggestions(query, limit = 10) {
   const params = new URLSearchParams({
     q: query,
     limit: limit.toString(),
-    search_type: searchType,
   });
   
-  const response = await fetch(`${API_BASE}/resources/search?${params}`, {
-    credentials: 'include',
+  const response = await fetch(`/api/search?${params}`, {
+    method: 'GET',
   });
   
   if (!response.ok) {
