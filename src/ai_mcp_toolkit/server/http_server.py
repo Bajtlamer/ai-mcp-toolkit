@@ -423,7 +423,7 @@ class HTTPServer:
                     username=user.username,
                     email=user.email,
                     full_name=user.full_name,
-                    role=user.role.value,
+                    role=user.role,
                     is_active=user.is_active,
                     created_at=user.created_at.isoformat(),
                     last_login=user.last_login.isoformat() if user.last_login else None
@@ -480,7 +480,7 @@ class HTTPServer:
                         username=user.username,
                         email=user.email,
                         full_name=user.full_name,
-                        role=user.role.value,
+                        role=user.role,
                         is_active=user.is_active,
                         created_at=user.created_at.isoformat(),
                         last_login=user.last_login.isoformat() if user.last_login else None
@@ -515,7 +515,7 @@ class HTTPServer:
                 username=user.username,
                 email=user.email,
                 full_name=user.full_name,
-                role=user.role.value,
+                role=user.role,
                 is_active=user.is_active,
                 created_at=user.created_at.isoformat(),
                 last_login=user.last_login.isoformat() if user.last_login else None

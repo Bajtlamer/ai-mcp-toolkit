@@ -112,7 +112,7 @@
       <!-- Page title -->
       <div class="flex items-center space-x-2 min-h-24">
         <h1 class="text-xl font-semibold text-gray-900 dark:text-white">
-          {pageTitle} <span class="text-xs font-normal text-gray-400 dark:text-gray-500">v{version}</span>
+          {pageTitle}
         </h1>
         
         <!-- Server status indicator -->
@@ -124,7 +124,7 @@
               ? 'bg-error-500'
               : 'bg-warning-500'
           }`}></div>
-          <span class="text-sm text-gray-500 dark:text-gray-400">
+          <span class="text-xs font-normal text-gray-500 dark:text-gray-400">
             {serverStatus === 'connected' ? 'Connected' : 
              serverStatus === 'disconnected' ? 'Disconnected' : 'Checking...'}
           </span>

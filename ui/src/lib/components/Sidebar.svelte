@@ -137,8 +137,16 @@
           <Bot size={18} class="text-white" />
         </div>
         <div>
-          <h1 class="text-lg font-bold text-gray-900 dark:text-white">AI MCP</h1>
-          <p class="text-xs text-gray-500 dark:text-gray-400">Toolkit</p>
+          <h1 class="text-md font-bold text-gray-900 dark:text-white">AI MCP
+            <span class="text-xs text-gray-500 dark:text-gray-200">Toolkit</span>
+            <span class="text-xs font-normal text-gray-500 dark:text-gray-400 mt-0.5">
+            v0.1.54-beta
+          </span>
+
+          </h1>
+          <!-- <span class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            v0.1.54-beta
+          </span> -->
         </div>
       </div>
       
