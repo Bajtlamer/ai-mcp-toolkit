@@ -41,10 +41,18 @@ class DatabaseManager:
             return
         
         try:
-            # Create Motor client
+            # Create Motor client with Atlas-optimized settings
             self.client = AsyncIOMotorClient(
                 self.mongodb_url,
-                serverSelectionTimeoutMS=5000
+                serverSelectionTimeoutMS=30000,  # 30 seconds for Atlas
+                connectTimeoutMS=20000,  # 20 seconds
+                socketTimeoutMS=20000,  # 20 seconds  
+                maxPoolSize=50,  # Connection pool size
+                minPoolSize=10,
+                maxIdleTimeMS=30000,
+                retryWrites=True,
+                retryReads=True,
+                w='majority'  # Write concern
             )
             
             # Test connection
