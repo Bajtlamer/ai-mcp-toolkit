@@ -1196,7 +1196,7 @@ class HTTPServer:
                             "description": db_resource.description,
                             "mimeType": db_resource.mime_type,
                             "resourceType": db_resource.resource_type.value,
-                            "ownerId": db_resource.owner_id,
+                            "ownerId": str(db_resource.owner_id),
                             "ownerUsername": owner_username,  # Only populated for admins
                             "createdAt": db_resource.created_at.isoformat(),
                             "updatedAt": db_resource.updated_at.isoformat()
@@ -1293,8 +1293,8 @@ class HTTPServer:
                     "file_name": resource.file_name,
                     "file_type": resource.file_type,
                     "size_bytes": resource.size_bytes,
-                    "company_id": resource.company_id,
-                    "owner_id": resource.owner_id,
+                    "company_id": str(resource.company_id),
+                    "owner_id": str(resource.owner_id),
                     "tags": resource.tags,
                     "summary": resource.summary,
                     "vendor": resource.vendor,
@@ -1337,14 +1337,14 @@ class HTTPServer:
                 
                 # Check ownership (admins can download any file)
                 is_admin = user.role == UserRole.ADMIN
-                if not is_admin and resource.owner_id != str(user.id):
+                if not is_admin and str(resource.owner_id) != str(user.id):
                     raise HTTPException(status_code=403, detail="Access denied")
                 
                 # Get file from storage
                 file_storage = get_file_storage_service()
                 file_bytes = file_storage.get_file(
                     file_id=file_id,
-                    user_id=resource.owner_id
+                    user_id=str(resource.owner_id)
                 )
                 
                 if not file_bytes:
@@ -1467,8 +1467,8 @@ class HTTPServer:
                     "file_name": resource.file_name,
                     "file_type": resource.file_type,
                     "size_bytes": resource.size_bytes,
-                    "company_id": resource.company_id,
-                    "owner_id": resource.owner_id,
+                    "company_id": str(resource.company_id),
+                    "owner_id": str(resource.owner_id),
                     "tags": resource.tags,
                     "summary": resource.summary,
                     "entities": resource.entities,
@@ -1887,7 +1887,7 @@ class HTTPServer:
                 
                 # Ownership check
                 is_admin = user.role == UserRole.ADMIN
-                if not is_admin and resource.owner_id != str(user.id):
+                if not is_admin and str(resource.owner_id) != str(user.id):
                     raise HTTPException(status_code=404, detail=f"Resource not found: {uri}")
                 
                 self.logger.info(f"Retrieved resource: {uri}")
@@ -1901,14 +1901,16 @@ class HTTPServer:
                     "mimeType": resource.mime_type,
                     "mime_type": resource.mime_type,
                     "resource_type": resource.resource_type.value if resource.resource_type else None,
-                    "content": resource.content,
                     "summary": resource.summary,
                     "file_id": resource.file_id,
                     "file_name": resource.file_name,
                     "file_type": resource.file_type,
-                    "owner_id": resource.owner_id,
-                    "company_id": resource.company_id,
+                    "owner_id": str(resource.owner_id),
+                    "company_id": str(resource.company_id),
                     "tags": resource.tags or [],
+                    "keywords": resource.keywords or [],
+                    "entities": resource.entities or [],
+                    "vendor": resource.vendor,
                     "created_at": resource.created_at.isoformat() if resource.created_at else None,
                     "updated_at": resource.updated_at.isoformat() if resource.updated_at else None,
                 }
@@ -1954,8 +1956,8 @@ class HTTPServer:
                     description=resource.description,
                     mime_type=resource.mime_type,
                     resource_type=resource.resource_type.value,
-                    owner_id=resource.owner_id,
-                    content=resource.content,
+                    owner_id=str(resource.owner_id),
+                    content=None,  # Content is stored in ResourceChunk documents
                     created_at=resource.created_at.isoformat(),
                     updated_at=resource.updated_at.isoformat()
                 )
@@ -2020,8 +2022,8 @@ class HTTPServer:
                     description=resource.description,
                     mime_type=resource.mime_type,
                     resource_type=resource.resource_type.value,
-                    owner_id=resource.owner_id,
-                    content=resource.content,
+                    owner_id=str(resource.owner_id),
+                    content=None,  # Content is stored in ResourceChunk documents
                     created_at=resource.created_at.isoformat(),
                     updated_at=resource.updated_at.isoformat()
                 )
@@ -2044,7 +2046,7 @@ class HTTPServer:
                     raise HTTPException(status_code=404, detail="Resource not found")
                 
                 # Check ownership
-                if not is_admin and resource.owner_id != str(user.id):
+                if not is_admin and str(resource.owner_id) != str(user.id):
                     raise HTTPException(status_code=403, detail="Access denied")
                 
                 resource_id = str(resource.id)
@@ -2062,7 +2064,7 @@ class HTTPServer:
                 if file_id:
                     try:
                         file_storage = get_file_storage_service()
-                        deleted = file_storage.delete_file(file_id, resource.owner_id)
+                        deleted = file_storage.delete_file(file_id, str(resource.owner_id))
                         if deleted:
                             self.logger.info(f"✅ Deleted local file: {file_id}")
                         else:
@@ -2570,7 +2572,7 @@ class HTTPServer:
                 return [
                     ConversationResponse(
                         id=str(c.id),
-                        user_id=c.user_id,
+                        user_id=str(c.user_id),
                         title=c.title,
                         messages=c.messages,
                         status=c.status,
@@ -2613,7 +2615,7 @@ class HTTPServer:
                 
                 return ConversationResponse(
                     id=str(conversation.id),
-                    user_id=conversation.user_id,
+                    user_id=str(conversation.user_id),
                     title=conversation.title,
                     messages=conversation.messages,
                     status=conversation.status,
@@ -2658,7 +2660,7 @@ class HTTPServer:
                 
                 return ConversationResponse(
                     id=str(conversation.id),
-                    user_id=conversation.user_id,
+                    user_id=str(conversation.user_id),
                     title=conversation.title,
                     messages=conversation.messages,
                     status=conversation.status,
@@ -2706,7 +2708,7 @@ class HTTPServer:
                 
                 return ConversationResponse(
                     id=str(conversation.id),
-                    user_id=conversation.user_id,
+                    user_id=str(conversation.user_id),
                     title=conversation.title,
                     messages=conversation.messages,
                     status=conversation.status,
@@ -2824,7 +2826,7 @@ class HTTPServer:
                 
                 return ConversationResponse(
                     id=str(conversation.id),
-                    user_id=conversation.user_id,
+                    user_id=str(conversation.user_id),
                     title=conversation.title,
                     messages=conversation.messages,
                     status=conversation.status,

@@ -134,16 +134,50 @@ class Resource(Document):
     owner_id: PydanticObjectId
     company_id: PydanticObjectId
     metadata: ResourceMetadata = Field(default_factory=ResourceMetadata)
+    
+    # Content and embeddings
+    content: Optional[str] = None
     text_embedding: Optional[List[float]] = None
+    image_embedding: Optional[List[float]] = None
+    embeddings: Optional[List[float]] = None
+    embeddings_model: Optional[str] = None
+    embeddings_created_at: Optional[datetime] = None
+    embeddings_chunk_count: Optional[int] = None
+    chunks: Optional[List[Dict[str, Any]]] = None
+    
+    # File information
     file_id: Optional[str] = None
     file_name: Optional[str] = None
     file_type: Optional[str] = None
+    file_path: Optional[str] = None
+    file_data_base64: Optional[str] = None
+    size_bytes: Optional[int] = None
+    
+    # Extracted metadata
     vendor: Optional[str] = None
     summary: Optional[str] = None
     keywords: List[str] = Field(default_factory=list)
     entities: List[str] = Field(default_factory=list)
     amounts_cents: List[int] = Field(default_factory=list)
     currency: Optional[str] = None
+    dates: List[Any] = Field(default_factory=list)  # Can be strings or datetime objects
+    invoice_no: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    
+    # OCR and image data
+    ocr_text: Optional[str] = None
+    image_labels: List[str] = Field(default_factory=list)
+    image_width: Optional[int] = None
+    image_height: Optional[int] = None
+    
+    # CSV data
+    csv_schema: Optional[Dict[str, Any]] = None
+    csv_stats: Optional[Dict[str, Any]] = None
+    
+    # Technical metadata
+    technical_metadata: Optional[Dict[str, Any]] = None
+    
+    # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
@@ -220,6 +254,7 @@ class Conversation(Document):
     user_id: PydanticObjectId
     title: str
     messages: List[Dict[str, Any]] = Field(default_factory=list)
+    status: str = Field(default="active")  # active, archived, deleted
     metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

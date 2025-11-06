@@ -68,7 +68,7 @@ class ConversationManager:
                 return None
             
             # Verify ownership
-            if conversation.user_id != user_id:
+            if str(conversation.user_id) != user_id:
                 self.logger.warning(f"User {user_id} attempted to access conversation {conversation_id} owned by {conversation.user_id}")
                 return None
             

@@ -106,7 +106,7 @@ class ResourceManager:
                 raise ValueError(f"Resource not found: {uri}")
             
             # Ownership check: regular users can only read their own resources
-            if not is_admin and user_id and resource.owner_id != user_id:
+            if not is_admin and user_id and str(resource.owner_id) != user_id:
                 raise ValueError(f"Access denied: Resource not found: {uri}")
             
             # Fetch/extract content based on resource type
@@ -250,6 +250,7 @@ class ResourceManager:
             )
             
             # Create new resource with embeddings
+            # Note: content is stored in ResourceChunk documents, not in the Resource itself
             resource = Resource(
                 uri=uri,
                 name=name,
@@ -257,13 +258,7 @@ class ResourceManager:
                 mime_type=mime_type,
                 resource_type=resource_type,
                 owner_id=owner_id,
-                content=content,
-                metadata=resource_metadata,
-                embeddings=embeddings,
-                chunks=chunks,
-                embeddings_model=metadata.get('embeddings_model') if metadata else None,
-                embeddings_created_at=datetime.utcnow() if embeddings else None,
-                embeddings_chunk_count=len(chunks) if chunks else 0
+                metadata=resource_metadata
             )
             
             # Save to database
@@ -313,7 +308,7 @@ class ResourceManager:
                 raise ValueError(f"Resource not found: {uri}")
             
             # Ownership check: regular users can only update their own resources
-            if not is_admin and user_id and resource.owner_id != user_id:
+            if not is_admin and user_id and str(resource.owner_id) != user_id:
                 raise ValueError(f"Access denied: Resource not found: {uri}")
             
             # Update fields
@@ -321,8 +316,7 @@ class ResourceManager:
                 resource.name = name
             if description is not None:
                 resource.description = description
-            if content is not None:
-                resource.content = content
+            # Note: content is stored in ResourceChunk documents, not directly updated here
             if metadata is not None:
                 resource.metadata.properties.update(metadata)
             
@@ -392,7 +386,7 @@ class ResourceManager:
                 raise ValueError(f"Resource not found: {uri}")
             
             # Ownership check: regular users can only delete their own resources
-            if not is_admin and user_id and resource.owner_id != user_id:
+            if not is_admin and user_id and str(resource.owner_id) != user_id:
                 raise ValueError(f"Access denied: Resource not found: {uri}")
             
             # 🐞 FIX: Delete associated chunks first

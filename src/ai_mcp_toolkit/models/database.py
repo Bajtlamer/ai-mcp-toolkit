@@ -7,7 +7,17 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 
+try:
+    import redis.asyncio as redis
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+    redis = None
+
 logger = logging.getLogger(__name__)
+
+# Global Redis client
+_redis_client: Optional[redis.Redis] = None
 
 
 class DatabaseManager:
@@ -114,4 +124,44 @@ class DatabaseManager:
 
 # Global database manager instance
 db_manager = DatabaseManager()
+
+
+async def get_redis_client():
+    """Get or create Redis client."""
+    global _redis_client
+    
+    if not REDIS_AVAILABLE:
+        logger.warning("Redis library not installed, suggestions disabled")
+        return None
+    
+    if _redis_client is not None:
+        return _redis_client
+    
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    redis_db = int(os.getenv("REDIS_DB", "0"))
+    
+    try:
+        _redis_client = redis.from_url(
+            redis_url,
+            db=redis_db,
+            decode_responses=True,
+            socket_connect_timeout=5
+        )
+        # Test connection
+        await _redis_client.ping()
+        logger.info(f"✅ Connected to Redis: {redis_url}")
+        return _redis_client
+    except Exception as e:
+        logger.warning(f"⚠️ Redis connection failed: {e}. Suggestions will be disabled.")
+        _redis_client = None
+        return None
+
+
+async def close_redis():
+    """Close Redis connection."""
+    global _redis_client
+    if _redis_client:
+        await _redis_client.close()
+        _redis_client = None
+        logger.info("Closed Redis connection")
 
