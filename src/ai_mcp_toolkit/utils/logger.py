@@ -7,7 +7,9 @@ import time
 from typing import Optional
 from pathlib import Path
 from rich.logging import RichHandler
+from logging.handlers import RotatingFileHandler
 import threading
+import os
 
 _loggers = {}
 _lock = threading.Lock()
@@ -15,13 +17,54 @@ _original_stderr = sys.stderr
 _last_mongo_warning = 0
 
 
+class TeeStream(io.TextIOBase):
+    """Stream that writes to both console and log file."""
+    
+    def __init__(self, console_stream, log_file_path: Optional[Path] = None):
+        self.console_stream = console_stream
+        self.log_file_path = log_file_path
+        self.log_file = None
+        
+        if log_file_path:
+            log_file_path.parent.mkdir(parents=True, exist_ok=True)
+            # Open in append mode with buffering
+            self.log_file = open(log_file_path, 'a', encoding='utf-8', buffering=1)
+    
+    def write(self, text: str) -> int:
+        # Write to console
+        result = self.console_stream.write(text)
+        
+        # Also write to log file
+        if self.log_file and not self.log_file.closed:
+            try:
+                self.log_file.write(text)
+                self.log_file.flush()
+            except Exception:
+                pass  # Fail silently if log file write fails
+        
+        return result
+    
+    def flush(self):
+        self.console_stream.flush()
+        if self.log_file and not self.log_file.closed:
+            self.log_file.flush()
+    
+    def close(self):
+        if self.log_file and not self.log_file.closed:
+            self.log_file.close()
+    
+    def isatty(self):
+        return self.console_stream.isatty()
+
+
 class MongoStderrFilter(io.TextIOBase):
     """Filter stderr to suppress verbose MongoDB background errors."""
     
-    def __init__(self, original_stderr):
+    def __init__(self, original_stderr, log_to_file: bool = True):
         self.original_stderr = original_stderr
         self.buffer = []
         self.suppress_next_lines = 0
+        self.log_to_file = log_to_file
     
     def write(self, text: str) -> int:
         global _last_mongo_warning
@@ -135,10 +178,24 @@ class MongoConnectionFilter(logging.Filter):
 
 
 def configure_logging(level: str = "INFO", log_file: Optional[str] = None) -> None:
-    """Configure global logging settings."""
-    # Install stderr filter to catch MongoDB background errors (printed directly to stderr)
+    """Configure global logging settings with stdout/stderr capture to rotating log files."""
+    
+    # Set up log directory
+    log_dir = Path(os.getenv("LOG_DIR", "logs"))
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Set up stdout capture to file (keeps history)
+    stdout_log = log_dir / "server_stdout.log"
+    if not isinstance(sys.stdout, TeeStream):
+        sys.stdout = TeeStream(sys.stdout, stdout_log)
+    
+    # Set up stderr with MongoDB filter AND file capture
+    stderr_log = log_dir / "server_stderr.log"
     if not isinstance(sys.stderr, MongoStderrFilter):
-        sys.stderr = MongoStderrFilter(_original_stderr)
+        # First wrap with TeeStream for file logging
+        tee_stderr = TeeStream(_original_stderr, stderr_log)
+        # Then wrap with MongoDB filter
+        sys.stderr = MongoStderrFilter(tee_stderr)
     
     # Remove default handlers
     logging.getLogger().handlers.clear()
@@ -172,3 +229,39 @@ def set_log_level(level: str) -> None:
             logger.setLevel(log_level)
             for handler in logger.handlers:
                 handler.setLevel(log_level)
+
+
+def rotate_logs(max_size_mb: int = 100, keep_backups: int = 5) -> None:
+    """Rotate log files if they exceed max size.
+    
+    Args:
+        max_size_mb: Maximum size in MB before rotation
+        keep_backups: Number of backup files to keep
+    """
+    log_dir = Path(os.getenv("LOG_DIR", "logs"))
+    if not log_dir.exists():
+        return
+    
+    max_size_bytes = max_size_mb * 1024 * 1024
+    
+    for log_file in log_dir.glob("*.log"):
+        if log_file.stat().st_size > max_size_bytes:
+            # Rotate: .log -> .log.1, .log.1 -> .log.2, etc.
+            for i in range(keep_backups - 1, 0, -1):
+                old_backup = log_dir / f"{log_file.name}.{i}"
+                new_backup = log_dir / f"{log_file.name}.{i + 1}"
+                if old_backup.exists():
+                    if new_backup.exists():
+                        new_backup.unlink()
+                    old_backup.rename(new_backup)
+            
+            # Move current log to .log.1
+            backup = log_dir / f"{log_file.name}.1"
+            if backup.exists():
+                backup.unlink()
+            log_file.rename(backup)
+            
+            # Create new empty log file
+            log_file.touch()
+            
+            print(f"📝 Rotated log file: {log_file.name} (exceeded {max_size_mb}MB)")

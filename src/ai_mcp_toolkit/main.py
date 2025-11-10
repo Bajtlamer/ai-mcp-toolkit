@@ -8,6 +8,7 @@ Usage:
 import asyncio
 from .server.http_server import HTTPServer
 from .utils.config import Config
+from .utils.logger import rotate_logs
 
 # Create server instance
 _server = None
@@ -19,6 +20,12 @@ def get_app():
     global _server, app
     
     if app is None:
+        # Rotate logs if needed (checks for files > 100MB)
+        try:
+            rotate_logs(max_size_mb=100, keep_backups=5)
+        except Exception as e:
+            print(f"Warning: Could not rotate logs: {e}")
+        
         # Create server synchronously
         _server = HTTPServer()
         
