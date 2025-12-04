@@ -28,33 +28,37 @@ console = Console()
 
 @app.command()
 def serve(
-    host: str = typer.Option("localhost", "--host", "-h", help="Server host"),
-    port: int = typer.Option(8000, "--port", "-p", help="Server port"),
+    host: Optional[str] = typer.Option(None, "--host", "-h", help="Server host"),
+    port: Optional[int] = typer.Option(None, "--port", "-p", help="Server port"),
     config_file: Optional[Path] = typer.Option(None, "--config", "-c", help="Configuration file path"),
-    log_level: str = typer.Option("INFO", "--log-level", "-l", help="Logging level")
+    log_level: Optional[str] = typer.Option(None, "--log-level", "-l", help="Logging level")
 ):
     """Start the MCP server."""
     try:
         # Load configuration
         config = load_config(config_file)
-        config.host = host
-        config.port = port
-        config.log_level = log_level.upper()
+        # Only override config if explicitly provided via CLI
+        if host is not None:
+            config.host = host
+        if port is not None:
+            config.port = port
+        if log_level is not None:
+            config.log_level = log_level.upper()
         
         # Configure logging
         configure_logging(config.log_level, config.log_file)
         
         console.print(Panel.fit(
             f"[bold green]Starting AI MCP Toolkit Server[/bold green]\n\n"
-            f"Host: {host}\n"
-            f"Port: {port}\n"
+            f"Host: {config.host}\n"
+            f"Port: {config.port}\n"
             f"Model: {config.ollama_model}\n"
-            f"Log Level: {log_level}",
+            f"Log Level: {config.log_level}",
             title="Server Configuration"
         ))
         
         # Run HTTP server
-        asyncio.run(run_http_server(host, port, config))
+        asyncio.run(run_http_server(config.host, config.port, config))
         
     except KeyboardInterrupt:
         console.print("\n[yellow]Server stopped by user[/yellow]")
